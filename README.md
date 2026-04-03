@@ -43,25 +43,4 @@ Este custom node utiliza la potencia de **Faster-Whisper** para la transcripció
 > **📦 Próximamente en ComfyUI Manager:** Este nodo estará pronto disponible para su instalación directa con 1-click desde el listado oficial del ComfyUI Manager.
 
 ---
-
-## 👨‍💻 Para Desarrolladores: Cómo publicar en ComfyUI Manager
-
-Si eres el autor y deseas publicar este nodo en el repositorio oficial de **ComfyUI Manager**, sigue estos pasos:
-
-1. Realiza un *Fork* del repositorio oficial de nodos: [ltdrdata/ComfyUI-Manager](https://github.com/ltdrdata/ComfyUI-Manager).
-2. Clona tu *fork* en tu computadora local.
-3. Abre el archivo `custom-node-list.json`.
-4. Añade un nuevo bloque de diccionario JSON al final de la lista con la información de este repositorio. El formato suele ser:
-   ```json
-   {
-       "author": "Tu Nombre/Meisoft",
-       "title": "🎬 Meisoft Auto Captions",
-       "reference": "https://github.com/tu-usuario/ComfyUI-AutoCaptions",
-       "files": ["https://github.com/tu-usuario/ComfyUI-AutoCaptions"],
-       "install_type": "git-clone",
-       "description": "Generador de subtítulos dinámicos y efecto karaoke palabra por palabra para ComfyUI usando Whisper y FFmpeg."
-   }
-   ```
-5. Haz *Commit* de los cambios (`git commit -m "Add ComfyUI-AutoCaptions"`).
-6. Haz *Push* a tu *fork*.
 7. Ve a la página de GitHub del [repo original de ltdrdata](https://github.com/ltdrdata/ComfyUI-Manager) y abre un **Pull Request**. Una vez que el autor lo apruebe, el nodo estará disponible globalmente para todos los usuarios. 🎉
