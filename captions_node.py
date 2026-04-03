@@ -1,6 +1,10 @@
 import os
 import subprocess
 import tempfile
+import uuid
+
+# ComfyUI specific imports
+import folder_paths
 
 # We will import faster_whisper conditionally or at the top level
 try:
@@ -61,45 +65,161 @@ class AutoCaptionsNode:
             print(f"Error extracting audio: {e.stderr.decode()}")
             return False
 
+    def hex_to_ass_color(self, hex_color):
+        """Converts #RRGGBB to &HBBGGRR&."""
+        hex_color = hex_color.lstrip('#')
+        if len(hex_color) != 6:
+            return "&H00FFFFFF&" # Fallback to white
+
+        r, g, b = hex_color[0:2], hex_color[2:4], hex_color[4:6]
+        return f"&H00{b}{g}{r}&"
+
+    def format_time_ass(self, seconds):
+        """Formats seconds to ASS time format: H:MM:SS.cs"""
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        secs = int(seconds % 60)
+        centiseconds = int(round((seconds - int(seconds)) * 100))
+        if centiseconds == 100:
+            secs += 1
+            centiseconds = 0
+
+        return f"{hours}:{minutes:02d}:{secs:02d}.{centiseconds:02d}"
+
+    def generate_ass_content(self, chunks, font_name, font_size, primary_color, highlight_color, alignment, platform_safe_zone):
+        # 1. Translate Alignment
+        align_map = {
+            "Bottom-Left": 1, "Bottom-Center": 2, "Bottom-Right": 3,
+            "Mid-Left": 4, "Mid-Center": 5, "Mid-Right": 6,
+            "Top-Left": 7, "Top-Center": 8, "Top-Right": 9
+        }
+        ass_alignment = align_map.get(alignment, 2)
+
+        # 2. Translate MarginV
+        margin_map = {
+            "TikTok": 250,
+            "IG Reels": 200,
+            "YT Shorts": 150,
+            "None": 20
+        }
+        margin_v = margin_map.get(platform_safe_zone, 20)
+
+        # Convert colors
+        prim_ass = self.hex_to_ass_color(primary_color)
+        high_ass = self.hex_to_ass_color(highlight_color)
+
+        # Header setup
+        header = f"""[Script Info]
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+WrapStyle: 1
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,{font_name}, {font_size},{prim_ass},&H000000FF&,&H00000000&,&H00000000&,0,0,0,0,100,100,0,0,1,3,1,{ass_alignment},20,20,{margin_v},1
+Style: Emoji,Noto Color Emoji, {font_size},{prim_ass},&H000000FF&,&H00000000&,&H00000000&,0,0,0,0,100,100,0,0,1,3,1,{ass_alignment},20,20,{margin_v},1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+
+        events = []
+        for chunk in chunks:
+            start_ass = self.format_time_ass(chunk["start"])
+            end_ass = self.format_time_ass(chunk["end"])
+
+            # Reconstruct the line with karaoke tags
+            line_text = ""
+            for i, word in enumerate(chunk["words"]):
+                # Calculate duration in milliseconds for the transition tag
+                duration_ms = int((word["end"] - word["start"]) * 1000)
+
+                # Pop-in effect: highlight color + scale up -> transition back to normal color + scale
+                pop_tag = f"{{\\c{high_ass}\\fscx120\\fscy120\\t(0,{duration_ms},\\c{prim_ass}\\fscx100\\fscy100)}}"
+
+                # The word should be normal *before* its time, pop *during*, and stay normal *after*
+                # However, the simple approach in an entire chunk line means we want the word to trigger at its start time.
+                # Since ASS processes tags sequentially, for multiple words to pop in sequentially,
+                # each word needs an absolute offset. Standard \t doesn't support absolute start times within the line.
+                # A common hack for line-based karaoke pop is rendering multiple lines or using \k.
+                # For this request, we'll follow the user instruction for inline tags, recognizing standard ASS \t
+                # triggers at line start unless wrapped. Wait, ASS \t format: \t([t1, t2, ] [accel, ] style_modifiers)
+                # t1 and t2 are relative to line start in ms!
+
+                t_start_ms = int((word["start"] - chunk["start"]) * 1000)
+                t_end_ms = int((word["end"] - chunk["start"]) * 1000)
+
+                # If we apply pop-in at t_start_ms, we do:
+                # 1. At start, the word is normal.
+                # 2. At t_start_ms, the word instantly pops (we need an instantaneous change, not animated over time to pop)
+                # 3. From t_start_ms to t_end_ms, it scales down and returns to primary color.
+
+                # Let's construct a precision sequence for the word.
+                # Note: ASS inline tags affect all text *after* them until overridden.
+                # So we must isolate the word.
+                # \alphaFF (invisible) is not requested. We show all words.
+
+                # To only affect this word:
+                # {{\t({t_start_ms},{t_start_ms},\c{high_ass}\fscx120\fscy120)\t({t_start_ms},{t_end_ms},\c{prim_ass}\fscx100\fscy100)}}Word{{\c{prim_ass}\fscx100\fscy100}}
+
+                # Simpler approach matching user request:
+                word_tag = f"{{\\t({t_start_ms},{t_start_ms},\\c{high_ass}\\fscx120\\fscy120)\\t({t_start_ms},{t_end_ms},\\c{prim_ass}\\fscx100\\fscy100)}}"
+                reset_tag = f"{{\\c{prim_ass}\\fscx100\\fscy100}}"
+
+                space = " " if i < len(chunk["words"]) - 1 else ""
+                line_text += f"{word_tag}{word['word'].strip()}{reset_tag}{space}"
+
+            event = f"Dialogue: 0,{start_ass},{end_ass},Default,,0,0,0,,{line_text}"
+            events.append(event)
+
+        return header + "\n".join(events) + "\n"
+
     def group_words_into_chunks(self, words, max_words=4):
         """
         Groups words into chunks of up to `max_words` length.
         Breaks early if strong punctuation is encountered.
         """
         chunks = []
-        current_chunk = []
+        current_chunk_words = []
         punctuation_marks = {'.', ',', '?', '!'}
 
         for word_info in words:
             word_text = word_info.word.strip()
-            current_chunk.append(word_info)
+            current_chunk_words.append({
+                "word": word_text,
+                "start": word_info.start,
+                "end": word_info.end
+            })
 
             # Check for early break due to punctuation
             has_punctuation = any(p in word_text for p in punctuation_marks)
 
-            if len(current_chunk) >= max_words or has_punctuation:
+            if len(current_chunk_words) >= max_words or has_punctuation:
                 # Build the chunk data
-                chunk_text = " ".join([w.word.strip() for w in current_chunk])
-                start_time = current_chunk[0].start
-                end_time = current_chunk[-1].end
+                chunk_text = " ".join([w["word"] for w in current_chunk_words])
+                start_time = current_chunk_words[0]["start"]
+                end_time = current_chunk_words[-1]["end"]
 
                 chunks.append({
                     "text": chunk_text,
                     "start": start_time,
-                    "end": end_time
+                    "end": end_time,
+                    "words": current_chunk_words
                 })
                 # Reset for the next chunk
-                current_chunk = []
+                current_chunk_words = []
 
         # Add any remaining words as the final chunk
-        if current_chunk:
-            chunk_text = " ".join([w.word.strip() for w in current_chunk])
-            start_time = current_chunk[0].start
-            end_time = current_chunk[-1].end
+        if current_chunk_words:
+            chunk_text = " ".join([w["word"] for w in current_chunk_words])
+            start_time = current_chunk_words[0]["start"]
+            end_time = current_chunk_words[-1]["end"]
             chunks.append({
                 "text": chunk_text,
                 "start": start_time,
-                "end": end_time
+                "end": end_time,
+                "words": current_chunk_words
             })
 
         return chunks
@@ -146,6 +266,23 @@ class AutoCaptionsNode:
             # Process chunks
             chunks = self.group_words_into_chunks(all_words, max_words=4)
 
+            # Generate ASS Content
+            print("Generating ASS subtitles...")
+            ass_content = self.generate_ass_content(
+                chunks, font_name, font_size, primary_color, highlight_color, alignment, platform_safe_zone
+            )
+
+            # Save to ComfyUI temp directory
+            temp_dir = folder_paths.get_temp_directory()
+            # Use uuid to avoid filename collision
+            temp_subs_filename = f"temp_subs_{uuid.uuid4().hex[:8]}.ass"
+            temp_subs_path = os.path.join(temp_dir, temp_subs_filename)
+
+            with open(temp_subs_path, "w", encoding="utf-8") as f:
+                f.write(ass_content)
+
+            print(f"Subtitles successfully saved to: {temp_subs_path}")
+
             # Print output for monitoring
             print("\n--- Generated Chunks ---")
             for chunk in chunks:
@@ -157,4 +294,5 @@ class AutoCaptionsNode:
             if os.path.exists(temp_audio_path):
                 os.remove(temp_audio_path)
 
+        # For phase 3 we just return the path to prove everything works
         return (video_path,)
