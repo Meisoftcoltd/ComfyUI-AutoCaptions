@@ -37,6 +37,7 @@ class AutoCaptionsNode:
                 "highlight_color": ("STRING", {"default": "#FFFF00"}),
                 "alignment": (["Top-Left", "Top-Center", "Top-Right", "Mid-Left", "Mid-Center", "Mid-Right", "Bottom-Left", "Bottom-Center", "Bottom-Right"], {"default": "Bottom-Center"}),
                 "platform_safe_zone": (["None", "TikTok", "IG Reels", "YT Shorts"], {"default": "None"}),
+                "translate_to": (["Original", "English", "Spanish", "French", "German", "Italian", "Portuguese", "Japanese", "Chinese"], {"default": "Original"}),
             }
         }
 
@@ -179,46 +180,26 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             start_ass = self.format_time_ass(chunk["start"])
             end_ass = self.format_time_ass(chunk["end"])
 
-            # Reconstruct the line with karaoke tags
-            line_text = ""
-            for i, word in enumerate(chunk["words"]):
-                # Calculate duration in milliseconds for the transition tag
-                duration_ms = int((word["end"] - word["start"]) * 1000)
+            if chunk.get("is_translated"):
+                # If translated via deep-translator, we lose word-level timestamps.
+                # Just output the translated text spanning the chunk's duration in primary color.
+                line_text = f"{{\\c{prim_ass}\\fscx100\\fscy100}}{chunk['text']}"
+            else:
+                # Reconstruct the line with karaoke tags
+                line_text = ""
+                for i, word in enumerate(chunk["words"]):
+                    # Calculate duration in milliseconds for the transition tag
+                    duration_ms = int((word["end"] - word["start"]) * 1000)
 
-                # Pop-in effect: highlight color + scale up -> transition back to normal color + scale
-                pop_tag = f"{{\\c{high_ass}\\fscx120\\fscy120\\t(0,{duration_ms},\\c{prim_ass}\\fscx100\\fscy100)}}"
+                    t_start_ms = int((word["start"] - chunk["start"]) * 1000)
+                    t_end_ms = int((word["end"] - chunk["start"]) * 1000)
 
-                # The word should be normal *before* its time, pop *during*, and stay normal *after*
-                # However, the simple approach in an entire chunk line means we want the word to trigger at its start time.
-                # Since ASS processes tags sequentially, for multiple words to pop in sequentially,
-                # each word needs an absolute offset. Standard \t doesn't support absolute start times within the line.
-                # A common hack for line-based karaoke pop is rendering multiple lines or using \k.
-                # For this request, we'll follow the user instruction for inline tags, recognizing standard ASS \t
-                # triggers at line start unless wrapped. Wait, ASS \t format: \t([t1, t2, ] [accel, ] style_modifiers)
-                # t1 and t2 are relative to line start in ms!
+                    # Simpler approach matching user request:
+                    word_tag = f"{{\\t({t_start_ms},{t_start_ms},\\c{high_ass}\\fscx120\\fscy120)\\t({t_start_ms},{t_end_ms},\\c{prim_ass}\\fscx100\\fscy100)}}"
+                    reset_tag = f"{{\\c{prim_ass}\\fscx100\\fscy100}}"
 
-                t_start_ms = int((word["start"] - chunk["start"]) * 1000)
-                t_end_ms = int((word["end"] - chunk["start"]) * 1000)
-
-                # If we apply pop-in at t_start_ms, we do:
-                # 1. At start, the word is normal.
-                # 2. At t_start_ms, the word instantly pops (we need an instantaneous change, not animated over time to pop)
-                # 3. From t_start_ms to t_end_ms, it scales down and returns to primary color.
-
-                # Let's construct a precision sequence for the word.
-                # Note: ASS inline tags affect all text *after* them until overridden.
-                # So we must isolate the word.
-                # \alphaFF (invisible) is not requested. We show all words.
-
-                # To only affect this word:
-                # {{\t({t_start_ms},{t_start_ms},\c{high_ass}\fscx120\fscy120)\t({t_start_ms},{t_end_ms},\c{prim_ass}\fscx100\fscy100)}}Word{{\c{prim_ass}\fscx100\fscy100}}
-
-                # Simpler approach matching user request:
-                word_tag = f"{{\\t({t_start_ms},{t_start_ms},\\c{high_ass}\\fscx120\\fscy120)\\t({t_start_ms},{t_end_ms},\\c{prim_ass}\\fscx100\\fscy100)}}"
-                reset_tag = f"{{\\c{prim_ass}\\fscx100\\fscy100}}"
-
-                space = " " if i < len(chunk["words"]) - 1 else ""
-                line_text += f"{word_tag}{word['word'].strip()}{reset_tag}{space}"
+                    space = " " if i < len(chunk["words"]) - 1 else ""
+                    line_text += f"{word_tag}{word['word'].strip()}{reset_tag}{space}"
 
             event = f"Dialogue: 0,{start_ass},{end_ass},Default,,0,0,0,,{line_text}"
             events.append(event)
@@ -274,10 +255,21 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
         return chunks
 
-    def generate_captions(self, video_path, font_name, font_size, primary_color, highlight_color, alignment, platform_safe_zone):
+    def generate_captions(self, video_path, font_name, font_size, primary_color, highlight_color, alignment, platform_safe_zone, translate_to):
         if not video_path or not os.path.exists(video_path):
             print(f"Error: Video path '{video_path}' is invalid or does not exist.")
             return (video_path,)
+
+        # Language map for deep-translator
+        lang_map = {
+            "Spanish": "es",
+            "French": "fr",
+            "German": "de",
+            "Italian": "it",
+            "Portuguese": "pt",
+            "Japanese": "ja",
+            "Chinese": "zh-CN"
+        }
 
         # Define paths
         current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -304,7 +296,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 return (video_path,)
 
             print("Transcribing audio...")
-            segments, info = model.transcribe(temp_audio_path, word_timestamps=True)
+            whisper_task = "translate" if translate_to == "English" else "transcribe"
+            segments, info = model.transcribe(temp_audio_path, word_timestamps=True, task=whisper_task)
 
             all_words = []
             for segment in segments:
@@ -315,6 +308,21 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
             # Process chunks
             chunks = self.group_words_into_chunks(all_words, max_words=4)
+
+            # Handle non-English translation via deep-translator
+            if translate_to not in ["Original", "English"]:
+                try:
+                    from deep_translator import GoogleTranslator
+                    target_lang = lang_map.get(translate_to, "en")
+                    print(f"Translating to {translate_to} ({target_lang})...")
+                    translator = GoogleTranslator(source='auto', target=target_lang)
+
+                    for chunk in chunks:
+                        translated_text = translator.translate(chunk["text"])
+                        chunk["text"] = translated_text
+                        chunk["is_translated"] = True
+                except Exception as e:
+                    print(f"Warning: Failed to translate to {translate_to}: {e}. Falling back to original transcription.")
 
             # Generate ASS Content
             print("Generating ASS subtitles...")
