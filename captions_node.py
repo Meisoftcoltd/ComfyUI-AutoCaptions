@@ -2,6 +2,7 @@ import os
 import subprocess
 import tempfile
 import uuid
+import urllib.request
 
 # ComfyUI specific imports
 import folder_paths
@@ -73,6 +74,55 @@ class AutoCaptionsNode:
 
         r, g, b = hex_color[0:2], hex_color[2:4], hex_color[4:6]
         return f"&H00{b}{g}{r}&"
+
+    def download_font(self, font_name):
+        """
+        Downloads a font from the Google Fonts raw GitHub repo.
+        Falls back gracefully if the download fails.
+        Returns the path to the directory containing the font.
+        """
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        fonts_dir = os.path.join(current_dir, "fonts")
+        os.makedirs(fonts_dir, exist_ok=True)
+
+        # Remove spaces for filename, lowercase for URL path, etc.
+        # Note: Google fonts directory paths and names can be complex. We'll use a best-effort approach.
+        formatted_name = font_name.replace(" ", "")
+        font_filename = f"{formatted_name}-Regular.ttf"
+        font_path = os.path.join(fonts_dir, font_filename)
+
+        if os.path.exists(font_path):
+            return fonts_dir
+
+        # Attempt to download
+        url_name_lower = formatted_name.lower()
+        # Common repositories (ofl, ufl, apache)
+        urls_to_try = [
+            f"https://github.com/google/fonts/raw/main/ofl/{url_name_lower}/{font_filename}",
+            f"https://github.com/google/fonts/raw/main/apache/{url_name_lower}/{font_filename}",
+            f"https://github.com/google/fonts/raw/main/ufl/{url_name_lower}/{font_filename}"
+        ]
+
+        print(f"Downloading font: {font_name}...")
+        for url in urls_to_try:
+            try:
+                urllib.request.urlretrieve(url, font_path)
+                print(f"Successfully downloaded font from {url}")
+                return fonts_dir
+            except Exception as e:
+                continue
+
+        print(f"Warning: Failed to download font '{font_name}'. Falling back to system defaults.")
+        # Return fonts_dir anyway; FFmpeg will use fallback system fonts if the specific TTF is missing
+        return fonts_dir
+
+    def escape_ffmpeg_path(self, path):
+        """Escapes Windows paths for FFmpeg's subtitles filter."""
+        # Replace backslashes with forward slashes
+        path = path.replace("\\", "/")
+        # Escape colon (e.g., C:/ -> C\:/)
+        path = path.replace(":", "\\:")
+        return path
 
     def format_time_ass(self, seconds):
         """Formats seconds to ASS time format: H:MM:SS.cs"""
@@ -283,6 +333,66 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
             print(f"Subtitles successfully saved to: {temp_subs_path}")
 
+            # Fetch font and format paths for FFmpeg
+            fonts_dir = self.download_font(font_name)
+            escaped_subs_path = self.escape_ffmpeg_path(temp_subs_path)
+            escaped_fonts_dir = self.escape_ffmpeg_path(fonts_dir)
+
+            # Generate Output Video Path
+            output_dir = folder_paths.get_output_directory()
+            final_video_filename = f"autocaptions_{uuid.uuid4().hex[:8]}.mp4"
+            final_video_path = os.path.join(output_dir, final_video_filename)
+
+            # FFmpeg Command to Burn Subtitles
+            print(f"Burning subtitles to {final_video_path}...")
+            # Use single quotes around the filter_complex string to safely handle spaces in paths on Unix/Windows
+            # Note: in subprocess list format, we don't need external quotes around the whole filter string,
+            # but internal spaces in the file path might need escaping if not handled by ffmpeg correctly.
+            # Best practice for ffmpeg subtitles filter is to quote the filename if it has spaces, but escaping
+            # works better across OS.
+            filter_str = f"subtitles='{escaped_subs_path}':fontsdir='{escaped_fonts_dir}'"
+
+            ffmpeg_burn_cmd = [
+                "ffmpeg",
+                "-y",
+                "-i", video_path,
+                "-vf", filter_str,
+                "-c:v", "libx264",
+                "-preset", "fast",
+                "-crf", "19",
+                "-c:a", "copy",
+                final_video_path
+            ]
+
+            try:
+                subprocess.run(ffmpeg_burn_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                print("Successfully generated final video.")
+            except subprocess.CalledProcessError as e:
+                print(f"Error burning subtitles: {e.stderr.decode()}")
+                return (video_path,) # Fallback to original
+
+            # Generate Preview Frame
+            print("Generating preview frame...")
+            preview_filename = f"preview_{uuid.uuid4().hex[:8]}.jpg"
+            preview_path = os.path.join(temp_dir, preview_filename)
+
+            ffmpeg_preview_cmd = [
+                "ffmpeg",
+                "-y",
+                "-ss", "00:00:01.500",
+                "-i", final_video_path,
+                "-vframes", "1",
+                "-q:v", "2",
+                preview_path
+            ]
+
+            try:
+                subprocess.run(ffmpeg_preview_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                print(f"Preview generated at {preview_path}")
+            except subprocess.CalledProcessError as e:
+                print(f"Error generating preview: {e.stderr.decode()}")
+                # We can survive without a preview
+
             # Print output for monitoring
             print("\n--- Generated Chunks ---")
             for chunk in chunks:
@@ -294,5 +404,17 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             if os.path.exists(temp_audio_path):
                 os.remove(temp_audio_path)
 
-        # For phase 3 we just return the path to prove everything works
-        return (video_path,)
+        # Return dict format required by ComfyUI to draw the image, plus the result tuple
+        ui_result = {
+            "ui": {
+                "images": [
+                    {
+                        "filename": preview_filename,
+                        "type": "temp"
+                    }
+                ]
+            },
+            "result": (final_video_path,)
+        }
+
+        return ui_result
