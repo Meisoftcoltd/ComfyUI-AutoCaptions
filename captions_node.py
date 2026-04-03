@@ -30,7 +30,8 @@ class AutoCaptionsNode:
     def INPUT_TYPES(s):
         return {
             "required": {
-                "video_path": ("STRING", {"default": ""}),
+                "video_upload": (folder_paths.get_filename_list("input"), ),
+                "run_mode": (["Burn Full Video", "Preview Style Only"], {"default": "Preview Style Only"}),
                 "font_name": (POPULAR_FONTS, {"default": "Bangers"}),
                 "font_size": ("INT", {"default": 72, "min": 8, "max": 256}),
                 "primary_color": ("STRING", {"default": "#FFFFFF"}),
@@ -38,6 +39,9 @@ class AutoCaptionsNode:
                 "alignment": (["Top-Left", "Top-Center", "Top-Right", "Mid-Left", "Mid-Center", "Mid-Right", "Bottom-Left", "Bottom-Center", "Bottom-Right"], {"default": "Bottom-Center"}),
                 "platform_safe_zone": (["None", "TikTok", "IG Reels", "YT Shorts"], {"default": "None"}),
                 "translate_to": (["Original", "English", "Spanish", "French", "German", "Italian", "Portuguese", "Japanese", "Chinese"], {"default": "Original"}),
+            },
+            "optional": {
+                "video_path_override": ("STRING", {"forceInput": True}),
             }
         }
 
@@ -255,7 +259,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
         return chunks
 
-    def generate_captions(self, video_path, font_name, font_size, primary_color, highlight_color, alignment, platform_safe_zone, translate_to):
+    def generate_captions(self, video_upload, run_mode, font_name, font_size, primary_color, highlight_color, alignment, platform_safe_zone, translate_to, video_path_override=None):
+        if video_path_override and isinstance(video_path_override, str) and video_path_override.strip() != "":
+            video_path = video_path_override
+        else:
+            video_path = os.path.join(folder_paths.get_input_directory(), video_upload)
+
         if not video_path or not os.path.exists(video_path):
             print(f"Error: Video path '{video_path}' is invalid or does not exist.")
             return (video_path,)
@@ -275,6 +284,76 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         current_dir = os.path.dirname(os.path.abspath(__file__))
         models_dir = os.path.join(current_dir, "models")
         os.makedirs(models_dir, exist_ok=True)
+
+        # If Preview Style Only, skip audio extraction and whisper
+        if run_mode == "Preview Style Only":
+            print("Preview Mode: Skipping audio transcription...")
+            # Fake chunk for preview
+            chunks = [{
+                "start": 1.0,
+                "end": 3.0,
+                "text": "TEST POP IN",
+                "words": [
+                    {"word": "TEST", "start": 1.0, "end": 1.5},
+                    {"word": "POP", "start": 1.5, "end": 2.0},
+                    {"word": "IN", "start": 2.0, "end": 3.0}
+                ]
+            }]
+
+            # Generate ASS Content
+            print("Generating ASS subtitles...")
+            ass_content = self.generate_ass_content(
+                chunks, font_name, font_size, primary_color, highlight_color, alignment, platform_safe_zone
+            )
+
+            # Save to ComfyUI temp directory
+            temp_dir = folder_paths.get_temp_directory()
+            temp_subs_filename = f"temp_subs_preview_{uuid.uuid4().hex[:8]}.ass"
+            temp_subs_path = os.path.join(temp_dir, temp_subs_filename)
+
+            with open(temp_subs_path, "w", encoding="utf-8") as f:
+                f.write(ass_content)
+
+            fonts_dir = self.download_font(font_name)
+            escaped_subs_path = self.escape_ffmpeg_path(temp_subs_path)
+            escaped_fonts_dir = self.escape_ffmpeg_path(fonts_dir)
+
+            preview_filename = f"preview_{uuid.uuid4().hex[:8]}.jpg"
+            preview_path = os.path.join(temp_dir, preview_filename)
+
+            filter_str = f"subtitles='{escaped_subs_path}':fontsdir='{escaped_fonts_dir}'"
+
+            ffmpeg_preview_cmd = [
+                "ffmpeg",
+                "-y",
+                "-ss", "00:00:01.500",
+                "-i", video_path,
+                "-an",
+                "-vf", filter_str,
+                "-vframes", "1",
+                "-q:v", "2",
+                preview_path
+            ]
+
+            try:
+                subprocess.run(ffmpeg_preview_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                print(f"Preview generated at {preview_path}")
+            except subprocess.CalledProcessError as e:
+                print(f"Error generating preview: {e.stderr.decode()}")
+
+            ui_result = {
+                "ui": {
+                    "images": [
+                        {
+                            "filename": preview_filename,
+                            "type": "temp"
+                        }
+                    ]
+                },
+                "result": ("",)
+            }
+            return ui_result
+
 
         # Create temporary audio file
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_audio:
@@ -366,9 +445,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 "-i", video_path,
                 "-vf", filter_str,
                 "-c:v", "libx264",
+                "-pix_fmt", "yuv420p",
                 "-preset", "fast",
                 "-crf", "19",
-                "-c:a", "copy",
+                "-c:a", "aac",
+                "-b:a", "192k",
                 final_video_path
             ]
 
@@ -389,6 +470,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 "-y",
                 "-ss", "00:00:01.500",
                 "-i", final_video_path,
+                "-an",
                 "-vframes", "1",
                 "-q:v", "2",
                 preview_path
