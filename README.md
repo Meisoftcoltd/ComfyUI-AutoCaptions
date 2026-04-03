@@ -29,7 +29,7 @@ Este custom node utiliza la potencia de **Faster-Whisper** para la transcripció
    ```
 2. Clona este repositorio:
    ```bash
-   git clone https://github.com/tu-usuario/ComfyUI-AutoCaptions.git
+   git clone https://github.com/meisoftcoltd/ComfyUI-AutoCaptions.git
    ```
 3. Entra en el directorio y descarga las dependencias del ecosistema Python:
    ```bash
