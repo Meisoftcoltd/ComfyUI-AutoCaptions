@@ -7,6 +7,14 @@ import urllib.request
 # ComfyUI specific imports
 import folder_paths
 
+# Ensure "video" is registered in folder_paths to prevent KeyErrors
+if "video" not in folder_paths.folder_names_and_paths:
+    # Use common video extensions
+    video_extensions = ['.mp4', '.mkv', '.avi', '.mov', '.webm', '.flv', '.wmv']
+    # Default to the ComfyUI input directory
+    input_dir = folder_paths.get_input_directory()
+    folder_paths.folder_names_and_paths["video"] = ([input_dir], set(video_extensions))
+
 # We will import faster_whisper conditionally or at the top level
 try:
     from faster_whisper import WhisperModel
@@ -30,7 +38,7 @@ class AutoCaptionsNode:
     def INPUT_TYPES(s):
         return {
             "required": {
-                "video_upload": (folder_paths.get_filename_list("input"), ),
+                "video_upload": (folder_paths.get_filename_list("video"), ),
                 "run_mode": (["Burn Full Video", "Preview Style Only"], {"default": "Preview Style Only"}),
                 "font_name": (POPULAR_FONTS, {"default": "Bangers"}),
                 "font_size": ("INT", {"default": 72, "min": 8, "max": 256}),
