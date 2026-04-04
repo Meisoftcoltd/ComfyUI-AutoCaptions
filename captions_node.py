@@ -3,17 +3,13 @@ import subprocess
 import tempfile
 import uuid
 import urllib.request
+import torch
+import torchaudio
+import numpy as np
+import cv2
 
 # ComfyUI specific imports
 import folder_paths
-
-# Ensure "video" is registered in folder_paths to prevent KeyErrors
-if "video" not in folder_paths.folder_names_and_paths:
-    # Use common video extensions
-    video_extensions = ['.mp4', '.mkv', '.avi', '.mov', '.webm', '.flv', '.wmv']
-    # Default to the ComfyUI input directory
-    input_dir = folder_paths.get_input_directory()
-    folder_paths.folder_names_and_paths["video"] = ([input_dir], set(video_extensions))
 
 # We will import faster_whisper conditionally or at the top level
 try:
@@ -38,46 +34,25 @@ class AutoCaptionsNode:
     def INPUT_TYPES(s):
         return {
             "required": {
-                "video_upload": (folder_paths.get_filename_list("video"), ),
-                "run_mode": (["Burn Full Video", "Preview Style Only"], {"default": "Preview Style Only"}),
+                "images": ("IMAGE",),
+                "audio": ("AUDIO",),
+                "fps": ("FLOAT", {"default": 30.0, "min": 1.0, "max": 120.0}),
                 "font_name": (POPULAR_FONTS, {"default": "Bangers"}),
                 "font_size": ("INT", {"default": 72, "min": 8, "max": 256}),
+                "outline_thickness": ("INT", {"default": 3, "min": 0, "max": 20}),
+                "shadow_opacity": ("INT", {"default": 1, "min": 0, "max": 20}),
                 "primary_color": ("STRING", {"default": "#FFFFFF"}),
                 "highlight_color": ("STRING", {"default": "#FFFF00"}),
                 "alignment": (["Top-Left", "Top-Center", "Top-Right", "Mid-Left", "Mid-Center", "Mid-Right", "Bottom-Left", "Bottom-Center", "Bottom-Right"], {"default": "Bottom-Center"}),
                 "platform_safe_zone": (["None", "TikTok", "IG Reels", "YT Shorts"], {"default": "None"}),
                 "translate_to": (["Original", "English", "Spanish", "French", "German", "Italian", "Portuguese", "Japanese", "Chinese"], {"default": "Original"}),
-            },
-            "optional": {
-                "video_path_override": ("STRING", {"forceInput": True}),
             }
         }
 
-    RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("video_path",)
+    RETURN_TYPES = ("IMAGE", "AUDIO", "STRING")
+    RETURN_NAMES = ("images", "audio", "ass_file_path")
     FUNCTION = "generate_captions"
-    OUTPUT_NODE = True
     CATEGORY = "Meisoft/Video"
-
-    def extract_audio(self, video_path, output_audio_path):
-        """Extracts audio from video using FFmpeg via subprocess."""
-        command = [
-            "ffmpeg",
-            "-y",  # Overwrite output file if it exists
-            "-i", video_path,
-            "-vn",  # Disable video processing
-            "-acodec", "pcm_s16le",  # Use PCM audio format
-            "-ar", "16000",  # Set sample rate to 16kHz (optimal for Whisper)
-            "-ac", "1",  # Set audio channels to 1 (mono)
-            output_audio_path
-        ]
-
-        try:
-            subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            return True
-        except subprocess.CalledProcessError as e:
-            print(f"Error extracting audio: {e.stderr.decode()}")
-            return False
 
     def hex_to_ass_color(self, hex_color):
         """Converts #RRGGBB to &HBBGGRR&."""
@@ -149,7 +124,7 @@ class AutoCaptionsNode:
 
         return f"{hours}:{minutes:02d}:{secs:02d}.{centiseconds:02d}"
 
-    def generate_ass_content(self, chunks, font_name, font_size, primary_color, highlight_color, alignment, platform_safe_zone):
+    def generate_ass_content(self, chunks, font_name, font_size, primary_color, highlight_color, alignment, platform_safe_zone, play_res_x, play_res_y, outline_thickness, shadow_opacity):
         # 1. Translate Alignment
         align_map = {
             "Bottom-Left": 1, "Bottom-Center": 2, "Bottom-Right": 3,
@@ -174,14 +149,14 @@ class AutoCaptionsNode:
         # Header setup
         header = f"""[Script Info]
 ScriptType: v4.00+
-PlayResX: 1080
-PlayResY: 1920
+PlayResX: {play_res_x}
+PlayResY: {play_res_y}
 WrapStyle: 1
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,{font_name}, {font_size},{prim_ass},&H000000FF&,&H00000000&,&H00000000&,0,0,0,0,100,100,0,0,1,3,1,{ass_alignment},20,20,{margin_v},1
-Style: Emoji,Noto Color Emoji, {font_size},{prim_ass},&H000000FF&,&H00000000&,&H00000000&,0,0,0,0,100,100,0,0,1,3,1,{ass_alignment},20,20,{margin_v},1
+Style: Default,{font_name}, {font_size},{prim_ass},&H000000FF&,&H00000000&,&H00000000&,0,0,0,0,100,100,0,0,1,{outline_thickness},{shadow_opacity},{ass_alignment},20,20,{margin_v},1
+Style: Emoji,Noto Color Emoji, {font_size},{prim_ass},&H000000FF&,&H00000000&,&H00000000&,0,0,0,0,100,100,0,0,1,{outline_thickness},{shadow_opacity},{ass_alignment},20,20,{margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -267,15 +242,13 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
         return chunks
 
-    def generate_captions(self, video_upload, run_mode, font_name, font_size, primary_color, highlight_color, alignment, platform_safe_zone, translate_to, video_path_override=None):
-        if video_path_override and isinstance(video_path_override, str) and video_path_override.strip() != "":
-            video_path = video_path_override
-        else:
-            video_path = os.path.join(folder_paths.get_input_directory(), video_upload)
+    def generate_captions(self, images, audio, fps, font_name, font_size, outline_thickness, shadow_opacity, primary_color, highlight_color, alignment, platform_safe_zone, translate_to):
+        if images is None or audio is None:
+            print("Error: Required inputs (images, audio) are missing.")
+            return (images, audio, "")
 
-        if not video_path or not os.path.exists(video_path):
-            print(f"Error: Video path '{video_path}' is invalid or does not exist.")
-            return (video_path,)
+        # Extract dimensions from images tensor [B, H, W, C]
+        batch_size, height, width, channels = images.shape
 
         # Language map for deep-translator
         lang_map = {
@@ -293,94 +266,58 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         models_dir = os.path.join(current_dir, "models")
         os.makedirs(models_dir, exist_ok=True)
 
-        # If Preview Style Only, skip audio extraction and whisper
-        if run_mode == "Preview Style Only":
-            print("Preview Mode: Skipping audio transcription...")
-            # Fake chunk for preview
-            chunks = [{
-                "start": 1.0,
-                "end": 3.0,
-                "text": "TEST POP IN",
-                "words": [
-                    {"word": "TEST", "start": 1.0, "end": 1.5},
-                    {"word": "POP", "start": 1.5, "end": 2.0},
-                    {"word": "IN", "start": 2.0, "end": 3.0}
-                ]
-            }]
+        temp_dir = folder_paths.get_temp_directory()
 
-            # Generate ASS Content
-            print("Generating ASS subtitles...")
-            ass_content = self.generate_ass_content(
-                chunks, font_name, font_size, primary_color, highlight_color, alignment, platform_safe_zone
-            )
+        # Handle Audio extraction via torchaudio
+        print("Extracting audio tensor to temp file...")
+        waveform = audio.get("waveform")
+        sample_rate = audio.get("sample_rate", 16000)
 
-            # Save to ComfyUI temp directory
-            temp_dir = folder_paths.get_temp_directory()
-            temp_subs_filename = f"temp_subs_preview_{uuid.uuid4().hex[:8]}.ass"
-            temp_subs_path = os.path.join(temp_dir, temp_subs_filename)
+        if waveform is None:
+            print("Error: Audio tensor does not contain 'waveform'.")
+            return (images, audio, "")
 
-            with open(temp_subs_path, "w", encoding="utf-8") as f:
-                f.write(ass_content)
+        if len(waveform.shape) == 3:
+            waveform = waveform.squeeze(0) # Remove batch dimension: [B, C, S] -> [C, S]
 
-            fonts_dir = self.download_font(font_name)
-            escaped_subs_path = self.escape_ffmpeg_path(temp_subs_path)
-            escaped_fonts_dir = self.escape_ffmpeg_path(fonts_dir)
-
-            preview_filename = f"preview_{uuid.uuid4().hex[:8]}.jpg"
-            preview_path = os.path.join(temp_dir, preview_filename)
-
-            filter_str = f"subtitles='{escaped_subs_path}':fontsdir='{escaped_fonts_dir}'"
-
-            ffmpeg_preview_cmd = [
-                "ffmpeg",
-                "-y",
-                "-ss", "00:00:01.500",
-                "-i", video_path,
-                "-an",
-                "-vf", filter_str,
-                "-vframes", "1",
-                "-q:v", "2",
-                preview_path
-            ]
-
-            try:
-                subprocess.run(ffmpeg_preview_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                print(f"Preview generated at {preview_path}")
-            except subprocess.CalledProcessError as e:
-                print(f"Error generating preview: {e.stderr.decode()}")
-
-            ui_result = {
-                "ui": {
-                    "images": [
-                        {
-                            "filename": preview_filename,
-                            "type": "temp"
-                        }
-                    ]
-                },
-                "result": ("",)
-            }
-            return ui_result
-
-
-        # Create temporary audio file
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_audio:
-            temp_audio_path = temp_audio.name
+        # Use uuid to avoid filename collision
+        run_uuid = uuid.uuid4().hex[:8]
+        temp_audio_path = os.path.join(temp_dir, f"temp_audio_{run_uuid}.wav")
 
         try:
-            print(f"Extracting audio from {video_path}...")
-            success = self.extract_audio(video_path, temp_audio_path)
+            torchaudio.save(temp_audio_path, waveform, sample_rate)
+        except Exception as e:
+            print(f"Error saving audio tensor: {e}")
+            return (images, audio, "")
 
-            if not success:
-                return (video_path,)
+        # Write images to a temp directory for FFmpeg
+        temp_frames_dir = os.path.join(temp_dir, f"temp_frames_{run_uuid}")
+        os.makedirs(temp_frames_dir, exist_ok=True)
 
-            print("Loading Whisper model (base)...")
+        print(f"Saving {batch_size} frames for FFmpeg processing...")
+        # images is float32 [0.0, 1.0] -> convert to uint8 [0, 255]
+        images_np = (images.cpu().numpy() * 255.0).astype(np.uint8)
+
+        for i in range(batch_size):
+            frame = images_np[i]
+            # Convert RGB (ComfyUI) to BGR (OpenCV)
+            frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            frame_path = os.path.join(temp_frames_dir, f"frame_{i:05d}.png")
+            cv2.imwrite(frame_path, frame_bgr)
+
+        # Input to ffmpeg: sequence of frames
+        input_frames_pattern = os.path.join(temp_frames_dir, "frame_%05d.png")
+
+        try:
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            compute_type = "float16" if torch.cuda.is_available() else "int8"
+            print(f"Loading Whisper model (large-v3) on {device} ({compute_type})...")
             try:
                 # Load the model, downloading it to the custom models directory
-                model = WhisperModel("base", device="cpu", compute_type="int8", download_root=models_dir)
+                model = WhisperModel("large-v3", device=device, compute_type=compute_type, download_root=models_dir)
             except Exception as e:
                 print(f"Failed to load WhisperModel: {e}")
-                return (video_path,)
+                return (images, audio, "")
 
             print("Transcribing audio...")
             whisper_task = "translate" if translate_to == "English" else "transcribe"
@@ -414,13 +351,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             # Generate ASS Content
             print("Generating ASS subtitles...")
             ass_content = self.generate_ass_content(
-                chunks, font_name, font_size, primary_color, highlight_color, alignment, platform_safe_zone
+                chunks, font_name, font_size, primary_color, highlight_color, alignment, platform_safe_zone, width, height, outline_thickness, shadow_opacity
             )
 
             # Save to ComfyUI temp directory
-            temp_dir = folder_paths.get_temp_directory()
             # Use uuid to avoid filename collision
-            temp_subs_filename = f"temp_subs_{uuid.uuid4().hex[:8]}.ass"
+            temp_subs_filename = f"temp_subs_{run_uuid}.ass"
             temp_subs_path = os.path.join(temp_dir, temp_subs_filename)
 
             with open(temp_subs_path, "w", encoding="utf-8") as f:
@@ -434,23 +370,19 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             escaped_fonts_dir = self.escape_ffmpeg_path(fonts_dir)
 
             # Generate Output Video Path
-            output_dir = folder_paths.get_output_directory()
-            final_video_filename = f"autocaptions_{uuid.uuid4().hex[:8]}.mp4"
-            final_video_path = os.path.join(output_dir, final_video_filename)
+            final_video_filename = f"autocaptions_{run_uuid}.mp4"
+            final_video_path = os.path.join(temp_dir, final_video_filename)
 
-            # FFmpeg Command to Burn Subtitles
-            print(f"Burning subtitles to {final_video_path}...")
-            # Use single quotes around the filter_complex string to safely handle spaces in paths on Unix/Windows
-            # Note: in subprocess list format, we don't need external quotes around the whole filter string,
-            # but internal spaces in the file path might need escaping if not handled by ffmpeg correctly.
-            # Best practice for ffmpeg subtitles filter is to quote the filename if it has spaces, but escaping
-            # works better across OS.
+            # FFmpeg Command to Combine Frames, Burn Subtitles and Add Audio
+            print(f"Generating video and burning subtitles to {final_video_path}...")
             filter_str = f"subtitles='{escaped_subs_path}':fontsdir='{escaped_fonts_dir}'"
 
             ffmpeg_burn_cmd = [
                 "ffmpeg",
                 "-y",
-                "-i", video_path,
+                "-framerate", str(fps),
+                "-i", input_frames_pattern,
+                "-i", temp_audio_path,
                 "-vf", filter_str,
                 "-c:v", "libx264",
                 "-pix_fmt", "yuv420p",
@@ -466,30 +398,27 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 print("Successfully generated final video.")
             except subprocess.CalledProcessError as e:
                 print(f"Error burning subtitles: {e.stderr.decode()}")
-                return (video_path,) # Fallback to original
+                return (images, audio, "") # Fallback to original
 
-            # Generate Preview Frame
-            print("Generating preview frame...")
-            preview_filename = f"preview_{uuid.uuid4().hex[:8]}.jpg"
-            preview_path = os.path.join(temp_dir, preview_filename)
+            # Read back the video frames into a tensor
+            print("Reading video back into ComfyUI tensor...")
+            cap = cv2.VideoCapture(final_video_path)
+            frames = []
+            while cap.isOpened():
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                # Convert BGR (OpenCV) back to RGB (ComfyUI)
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                frames.append(frame_rgb)
+            cap.release()
 
-            ffmpeg_preview_cmd = [
-                "ffmpeg",
-                "-y",
-                "-ss", "00:00:01.500",
-                "-i", final_video_path,
-                "-an",
-                "-vframes", "1",
-                "-q:v", "2",
-                preview_path
-            ]
+            if not frames:
+                print("Error: Could not read frames from generated video.")
+                return (images, audio, temp_subs_path)
 
-            try:
-                subprocess.run(ffmpeg_preview_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                print(f"Preview generated at {preview_path}")
-            except subprocess.CalledProcessError as e:
-                print(f"Error generating preview: {e.stderr.decode()}")
-                # We can survive without a preview
+            # Convert to float32 tensor [B, H, W, C] in range [0.0, 1.0]
+            out_images = torch.from_numpy(np.array(frames).astype(np.float32) / 255.0)
 
             # Print output for monitoring
             print("\n--- Generated Chunks ---")
@@ -498,21 +427,18 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             print("------------------------\n")
 
         finally:
-            # Clean up temporary audio file
+            # Clean up temporary audio file and frames directory
             if os.path.exists(temp_audio_path):
-                os.remove(temp_audio_path)
+                try:
+                    os.remove(temp_audio_path)
+                except Exception:
+                    pass
 
-        # Return dict format required by ComfyUI to draw the image, plus the result tuple
-        ui_result = {
-            "ui": {
-                "images": [
-                    {
-                        "filename": preview_filename,
-                        "type": "temp"
-                    }
-                ]
-            },
-            "result": (final_video_path,)
-        }
+            if os.path.exists(temp_frames_dir):
+                import shutil
+                try:
+                    shutil.rmtree(temp_frames_dir)
+                except Exception:
+                    pass
 
-        return ui_result
+        return (out_images, audio, temp_subs_path)
