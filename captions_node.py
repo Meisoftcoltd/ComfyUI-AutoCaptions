@@ -29,9 +29,21 @@ POPULAR_FONTS = [
     "Bungee", "Squada One", "Monoton", "Bowlby One", "Baloo 2", "Creepster"
 ]
 
+COLOR_MAP = {
+    "Blanco Puro": "#FFFFFF",
+    "Amarillo Neón": "#FFFF00",
+    "Verde Lima": "#00FF00",
+    "Cian Eléctrico": "#00FFFF",
+    "Rojo Intenso": "#FF0000",
+    "Rosa Hot": "#FF00FF",
+    "Naranja Vibrante": "#FFA500",
+    "Negro Absoluto": "#000000"
+}
+
 class AutoCaptionsNode:
     @classmethod
     def INPUT_TYPES(s):
+        color_names = list(COLOR_MAP.keys())
         return {
             "required": {
                 "images": ("IMAGE",),
@@ -40,9 +52,11 @@ class AutoCaptionsNode:
                 "font_name": (POPULAR_FONTS, {"default": "Bangers"}),
                 "font_size": ("INT", {"default": 72, "min": 8, "max": 256}),
                 "outline_thickness": ("INT", {"default": 3, "min": 0, "max": 20}),
-                "shadow_opacity": ("INT", {"default": 1, "min": 0, "max": 20}),
-                "primary_color": ("STRING", {"default": "#FFFFFF"}),
-                "highlight_color": ("STRING", {"default": "#FFFF00"}),
+                "shadow_offset": ("INT", {"default": 5, "min": 0, "max": 20}),
+                "primary_color": (color_names, {"default": "Blanco Puro"}),
+                "highlight_color": (color_names, {"default": "Amarillo Neón"}),
+                "outline_color": (color_names, {"default": "Negro Absoluto"}),
+                "shadow_color": (color_names, {"default": "Negro Absoluto"}),
                 "alignment": (["Top-Left", "Top-Center", "Top-Right", "Mid-Left", "Mid-Center", "Mid-Right", "Bottom-Left", "Bottom-Center", "Bottom-Right"], {"default": "Bottom-Center"}),
                 "platform_safe_zone": (["None", "TikTok", "IG Reels", "YT Shorts"], {"default": "None"}),
                 "translate_to": (["Original", "English", "Spanish", "French", "German", "Italian", "Portuguese", "Japanese", "Chinese"], {"default": "Original"}),
@@ -124,7 +138,7 @@ class AutoCaptionsNode:
 
         return f"{hours}:{minutes:02d}:{secs:02d}.{centiseconds:02d}"
 
-    def generate_ass_content(self, chunks, font_name, font_size, primary_color, highlight_color, alignment, platform_safe_zone, play_res_x, play_res_y, outline_thickness, shadow_opacity):
+    def generate_ass_content(self, chunks, font_name, font_size, primary_color, highlight_color, outline_color, shadow_color, alignment, platform_safe_zone, play_res_x, play_res_y, outline_thickness, shadow_offset):
         # 1. Translate Alignment
         align_map = {
             "Bottom-Left": 1, "Bottom-Center": 2, "Bottom-Right": 3,
@@ -145,6 +159,8 @@ class AutoCaptionsNode:
         # Convert colors
         prim_ass = self.hex_to_ass_color(primary_color)
         high_ass = self.hex_to_ass_color(highlight_color)
+        out_ass = self.hex_to_ass_color(outline_color)
+        shad_ass = self.hex_to_ass_color(shadow_color)
 
         # Header setup
         header = f"""[Script Info]
@@ -155,8 +171,8 @@ WrapStyle: 1
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,{font_name}, {font_size},{prim_ass},&H000000FF&,&H00000000&,&H00000000&,0,0,0,0,100,100,0,0,1,{outline_thickness},{shadow_opacity},{ass_alignment},20,20,{margin_v},1
-Style: Emoji,Noto Color Emoji, {font_size},{prim_ass},&H000000FF&,&H00000000&,&H00000000&,0,0,0,0,100,100,0,0,1,{outline_thickness},{shadow_opacity},{ass_alignment},20,20,{margin_v},1
+Style: Default,{font_name}, {font_size},{prim_ass},&H000000FF&,{out_ass},{shad_ass},0,0,0,0,100,100,0,0,1,{outline_thickness},{shadow_offset},{ass_alignment},20,20,{margin_v},1
+Style: Emoji,Noto Color Emoji, {font_size},{prim_ass},&H000000FF&,{out_ass},{shad_ass},0,0,0,0,100,100,0,0,1,{outline_thickness},{shadow_offset},{ass_alignment},20,20,{margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -242,7 +258,13 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
         return chunks
 
-    def generate_captions(self, images, audio, fps, font_name, font_size, outline_thickness, shadow_opacity, primary_color, highlight_color, alignment, platform_safe_zone, translate_to):
+    def generate_captions(self, images, audio, fps, font_name, font_size, outline_thickness, shadow_offset, primary_color, highlight_color, outline_color, shadow_color, alignment, platform_safe_zone, translate_to):
+
+        real_primary = COLOR_MAP.get(primary_color, "#FFFFFF")
+        real_highlight = COLOR_MAP.get(highlight_color, "#FFFF00")
+        real_outline = COLOR_MAP.get(outline_color, "#000000")
+        real_shadow = COLOR_MAP.get(shadow_color, "#000000")
+
         if images is None or audio is None:
             print("Error: Required inputs (images, audio) are missing.")
             return (images, audio, "")
@@ -351,7 +373,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             # Generate ASS Content
             print("Generating ASS subtitles...")
             ass_content = self.generate_ass_content(
-                chunks, font_name, font_size, primary_color, highlight_color, alignment, platform_safe_zone, width, height, outline_thickness, shadow_opacity
+                chunks, font_name, font_size, real_primary, real_highlight, real_outline, real_shadow, alignment, platform_safe_zone, width, height, outline_thickness, shadow_offset
             )
 
             # Save to ComfyUI temp directory
