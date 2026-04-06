@@ -2,20 +2,54 @@
 
 ¡Genera subtítulos dinámicos estilo CapCut/TikTok directamente en ComfyUI!
 
-Este custom node utiliza la potencia de **Faster-Whisper** para la transcripción con precisión de palabras, y la magia de **FFmpeg** (`.ass` format) para quemar subtítulos espectaculares en tus vídeos. ¡Todo de forma automática, inteligente y sin salir de tu entorno de IA! 🚀
+Este custom node procesa de forma nativa los tensores de `IMAGE` y `AUDIO` de ComfyUI. Utiliza la potencia de **Faster-Whisper** para la transcripción con precisión de palabras, y la magia de **FFmpeg** (formato `.ass`) para quemar subtítulos espectaculares en tus vídeos. ¡Todo de forma automática, inteligente y sin salir de tu entorno de IA! 🚀
 
-## ✨ Características
+## ✨ Características Principales
 
-*   **⚡ Motor Ultra-Rápido:** Utiliza `faster-whisper` (modelo base/small) descargado directamente en el directorio del nodo, sin inundar la caché de tu sistema.
-*   **🎤 Efecto Karaoke (Pop-in):** Sincronización precisa palabra por palabra. ¡Las palabras saltan (scale-up) y cambian de color justo cuando se pronuncian!
-*   **🧠 Agrupación Inteligente:** Agrupa las palabras en bloques de lectura rápida (máximo 4 palabras por línea) y aplica cortes naturales de respiración respetando la puntuación (comas, puntos, etc.).
-*   **🎨 Personalización Total:** Escoge la fuente, el color primario, el color de resalte (`highlight_color`), el tamaño y la alineación.
-*   **📱 Zonas Seguras:** Integración directa de márgenes inteligentes para **TikTok**, **IG Reels** y **YT Shorts** para asegurar que el texto nunca quede oculto bajo la interfaz de la red social.
-*   **🅰️ Fuentes Dinámicas:** Descarga la fuente que pidas automáticamente desde Google Fonts y hace un fallback a la fuente del sistema si ocurre un problema de red.
+*   **⚡ Motor Ultra-Rápido:** Utiliza el modelo `large-v3` de `faster-whisper`, el cual se descarga y gestiona localmente dentro de la carpeta del nodo para evitar problemas de caché.
+*   **🎤 Efecto Karaoke (Pop-in):** Sincronización precisa palabra por palabra. ¡Las palabras saltan (scale-up) y cambian al color de resalte justo cuando se pronuncian en inglés/original!
+*   **🧠 Agrupación Inteligente:** Agrupa las palabras en bloques de lectura rápida (máximo 4 palabras por línea) y aplica cortes naturales de respiración forzando saltos de línea al encontrar puntuación fuerte (comas, puntos, etc.).
+*   **🌍 Traducción Integrada:** Traduce tus subtítulos de forma automática a múltiples idiomas (Español, Francés, Alemán, Japonés, etc.) utilizando `deep-translator`.
+*   **🅰️ Fuentes Dinámicas Inteligentes:** Ajuste automático del tamaño de la fuente basado en un porcentaje del ancho de tu video. Además, descarga dinámicamente tu fuente elegida desde Google Fonts.
+*   **📱 Zonas Seguras (Safe Zones):** Márgenes integrados y precisos para **TikTok**, **IG Reels** y **YT Shorts** para asegurar que tu texto nunca quede oculto bajo la interfaz (botones de like, descripción) de la red social.
+*   **🖥️ Previsualización de Grado Estudio:** El nodo cuenta con un canvas interactivo WYSIWYG. Verás un texto de marcador ("LOREM IPSUM DOLOR SIT") sobre un fondo cinematográfico que refleja en tiempo real tus ajustes de colores, fuentes, grosores y alineación (con una Safe Zone simulada del 10%).
+*   **📊 Feedback Asíncrono:** Durante el renderizado de FFmpeg, no sufrirás cuelgues ni pantallas congeladas. Una barra de progreso profesional (`tqdm`) te mostrará en la terminal el frame actual, ETA y velocidad de procesamiento.
+
+---
+
+## 🎛️ Parámetros y Opciones del Nodo
+
+El nodo `MeisoftAutoCaptions` acepta conexiones estándar de ComfyUI y ofrece una amplia gama de opciones de estilización.
+
+### 🔌 Entradas (Inputs)
+*   **`images`**: (`IMAGE`) El tensor de imágenes o secuencia de frames (tu video base).
+*   **`audio`**: (`AUDIO`) El tensor de audio sincronizado con las imágenes.
+
+### ⚙️ Configuraciones
+*   **`fps`**: Los cuadros por segundo (Frames Per Second) a los que se exportará el video (Min: 1.0, Max: 120.0). *Debe coincidir con tus frames de entrada para mantener la sincronización.*
+*   **`font_name`**: Selección entre decenas de las fuentes más populares de Google Fonts para subtítulos (e.g., Bangers, Montserrat, Anton, Bebas Neue).
+*   **`font_width_percent`**: (10% - 100%) ¿Qué porcentaje de la pantalla debe ocupar el ancho de la línea de texto? El nodo calcula automáticamente el tamaño de fuente perfecto para lograr este porcentaje.
+*   **`primary_color`**: El color base del texto cuando no está siendo pronunciado.
+*   **`highlight_color`**: El color al que cambia la palabra exacta en el momento en que se pronuncia (Efecto Karaoke).
+*   **`outline_color` / `outline_thickness`**: Color y grosor del contorno (stroke) alrededor del texto para darle legibilidad en fondos brillantes.
+*   **`shadow_color` / `shadow_offset`**: Color y desplazamiento de una fuerte sombra paralela (Hard Drop Shadow) para darle un look 3D.
+*   **`alignment`**: La ubicación física del texto en pantalla. Combina posiciones verticales y horizontales (Ej: `Bottom-Center`, `Top-Left`, `Mid-Right`).
+*   **`platform_safe_zone`**: Aplica un margen vertical (Padding) automático desde el borde inferior/superior pensado para redes sociales:
+    *   `None`: Margen estándar.
+    *   `TikTok`: Margen muy alto para esquivar la descripción larga y los botones derechos.
+    *   `IG Reels` / `YT Shorts`: Márgenes balanceados específicos para estas plataformas.
+*   **`translate_to`**: Traduce lo que se escucha en el audio. Selecciona `Original` para transcribir en el mismo idioma del audio. (Nota: Si traduces, se desactiva el pop-in palabra por palabra en favor de subtítulos completos por frase).
+
+### 📤 Salidas (Outputs)
+*   **`images`**: (`IMAGE`) El tensor de imágenes con los subtítulos ya quemados de forma nativa.
+*   **`audio`**: (`AUDIO`) Pasa el audio de entrada sin modificar.
+*   **`ass_file_path`**: (`STRING`) La ruta del archivo `.ass` temporal generado, por si deseas usarlo en software de edición externo.
+
+---
 
 ## 🛠️ Requisitos del Sistema
 
-⚠️ **IMPORTANTE:** Este nodo **requiere que FFmpeg esté instalado en tu sistema** y añadido al `PATH` de las variables de entorno.
+⚠️ **IMPORTANTE:** Este nodo procesa el video nativamente de una forma robusta, pero **requiere que FFmpeg esté instalado en tu sistema** y añadido al `PATH` de las variables de entorno.
 
 *   **Windows:** Descarga un build de [gyan.dev](https://www.gyan.dev/ffmpeg/builds/) o usa `winget install ffmpeg`.
 *   **macOS:** `brew install ffmpeg`
@@ -41,6 +75,3 @@ Este custom node utiliza la potencia de **Faster-Whisper** para la transcripció
 4. ¡Reinicia ComfyUI!
 
 > **📦 Próximamente en ComfyUI Manager:** Este nodo estará pronto disponible para su instalación directa con 1-click desde el listado oficial del ComfyUI Manager.
-
----
-7. Ve a la página de GitHub del [repo original de ltdrdata](https://github.com/ltdrdata/ComfyUI-Manager) y abre un **Pull Request**. Una vez que el autor lo apruebe, el nodo estará disponible globalmente para todos los usuarios. 🎉
