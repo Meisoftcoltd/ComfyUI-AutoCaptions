@@ -1,5 +1,18 @@
 import { app } from "../../scripts/app.js";
 
+const COLOR_MAP = {
+    "Blanco Puro": "#FFFFFF",
+    "Amarillo Neón": "#FFFF00",
+    "Verde Lima": "#00FF00",
+    "Cian Eléctrico": "#00FFFF",
+    "Rojo Intenso": "#FF0000",
+    "Rosa Hot": "#FF00FF",
+    "Naranja Vibrante": "#FFA500",
+    "Negro Absoluto": "#000000"
+};
+
+const loadedFonts = new Set();
+
 app.registerExtension({
     name: "Meisoft.AutoCaptionsUI",
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
@@ -14,7 +27,7 @@ app.registerExtension({
                 setTimeout(() => {
                     if (!this.widgets) return; // Seguridad extra
 
-                    const colorWidgets = ["font_color", "highlight_color", "stroke_color", "shadow_color"];
+                    const colorWidgets = ["primary_color", "highlight_color", "outline_color", "shadow_color"];
 
                     for (const w of this.widgets) {
                         if (colorWidgets.includes(w.name) && !w._meisoft_patched) {
@@ -29,7 +42,7 @@ app.registerExtension({
                                 ctx.save();
                                 ctx.shadowColor = "rgba(0,0,0,0.5)";
                                 ctx.shadowBlur = 4;
-                                ctx.fillStyle = this.value || "#FFFFFF";
+                                ctx.fillStyle = COLOR_MAP[this.value] || "#FFFFFF";
 
                                 ctx.beginPath();
                                 ctx.roundRect(width - swatchWidth - margin, y + margin, swatchWidth, widget_height - (margin * 2), 4);
@@ -61,11 +74,29 @@ app.registerExtension({
                     return w ? w.value : def;
                 };
 
-                const fontColor = getVal("font_color", "#FFFFFF");
-                const highlightColor = getVal("highlight_color", "#FFFF00");
-                const strokeColor = getVal("stroke_color", "#000000");
-                const shadowColor = getVal("shadow_color", "#000000");
-                const fontName = getVal("font_name", "Arial");
+                const primaryColorName = getVal("primary_color", "Blanco Puro");
+                const highlightColorName = getVal("highlight_color", "Amarillo Neón");
+                const outlineColorName = getVal("outline_color", "Negro Absoluto");
+                const shadowColorName = getVal("shadow_color", "Negro Absoluto");
+
+                const primaryColor = COLOR_MAP[primaryColorName] || "#FFFFFF";
+                const highlightColor = COLOR_MAP[highlightColorName] || "#FFFF00";
+                const outlineColor = COLOR_MAP[outlineColorName] || "#000000";
+                const shadowColor = COLOR_MAP[shadowColorName] || "#000000";
+
+                const outlineThickness = getVal("outline_thickness", 3);
+                const shadowOffset = getVal("shadow_offset", 5);
+
+                const fontName = getVal("font_name", "Bangers");
+
+                // Cargar la fuente dinámicamente si no está cargada
+                if (!loadedFonts.has(fontName) && fontName !== "Arial") {
+                    loadedFonts.add(fontName);
+                    const link = document.createElement("link");
+                    link.rel = "stylesheet";
+                    link.href = `https://fonts.googleapis.com/css2?family=${fontName.replace(/ /g, "+")}&display=swap`;
+                    document.head.appendChild(link);
+                }
 
                 ctx.save();
                 const boxHeight = 60;
@@ -85,9 +116,10 @@ app.registerExtension({
                 ctx.stroke();
 
                 const words = [
-                    { text: "MIRA ", color: fontColor, scale: 1.0, glow: false },
-                    { text: "ESTE ", color: highlightColor, scale: 1.25, glow: true },
-                    { text: "DETALLE", color: fontColor, scale: 1.0, glow: false }
+                    { text: "MIRA ", color: primaryColor, scale: 1.0, glow: false },
+                    { text: "ESTE ", color: primaryColor, scale: 1.0, glow: false },
+                    { text: "NUEVO ", color: primaryColor, scale: 1.0, glow: false },
+                    { text: "EFECTO", color: highlightColor, scale: 1.25, glow: true }
                 ];
 
                 let totalWidth = 0;
@@ -105,16 +137,23 @@ app.registerExtension({
                     const fontSize = Math.round(22 * w.scale);
                     ctx.font = `bold ${fontSize}px "${fontName}", sans-serif`;
 
+                    // Hard drop shadow
                     ctx.shadowColor = shadowColor;
-                    ctx.shadowBlur = w.glow ? 10 : 4;
-                    ctx.shadowOffsetX = 2;
-                    ctx.shadowOffsetY = 2;
-
-                    ctx.lineWidth = 5;
-                    ctx.strokeStyle = strokeColor;
-                    ctx.strokeText(w.text, currentX, textY);
-
                     ctx.shadowBlur = 0;
+                    ctx.shadowOffsetX = shadowOffset;
+                    ctx.shadowOffsetY = shadowOffset;
+
+                    // Stroke
+                    if (outlineThickness > 0) {
+                        ctx.lineWidth = outlineThickness * 2; // multiply by 2 because stroke is centered
+                        ctx.strokeStyle = outlineColor;
+                        ctx.strokeText(w.text, currentX, textY);
+                    }
+
+                    // Fill text
+                    ctx.shadowBlur = 0;
+                    ctx.shadowOffsetX = 0;
+                    ctx.shadowOffsetY = 0;
                     ctx.fillStyle = w.color;
                     ctx.fillText(w.text, currentX, textY);
 
