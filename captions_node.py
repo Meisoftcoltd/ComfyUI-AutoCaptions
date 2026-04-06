@@ -50,7 +50,7 @@ class AutoCaptionsNode:
                 "audio": ("AUDIO",),
                 "fps": ("FLOAT", {"default": 30.0, "min": 1.0, "max": 120.0}),
                 "font_name": (POPULAR_FONTS, {"default": "Bangers"}),
-                "font_size": ("INT", {"default": 72, "min": 8, "max": 256}),
+                "font_width_percent": ("INT", {"default": 80, "min": 10, "max": 100}),
                 "outline_thickness": ("INT", {"default": 3, "min": 0, "max": 20}),
                 "shadow_offset": ("INT", {"default": 5, "min": 0, "max": 20}),
                 "primary_color": (color_names, {"default": "Blanco Puro"}),
@@ -258,7 +258,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
         return chunks
 
-    def generate_captions(self, images, audio, fps, font_name, font_size, outline_thickness, shadow_offset, primary_color, highlight_color, outline_color, shadow_color, alignment, platform_safe_zone, translate_to):
+    def generate_captions(self, images, audio, fps, font_name, font_width_percent, outline_thickness, shadow_offset, primary_color, highlight_color, outline_color, shadow_color, alignment, platform_safe_zone, translate_to):
 
         real_primary = COLOR_MAP.get(primary_color, "#FFFFFF")
         real_highlight = COLOR_MAP.get(highlight_color, "#FFFF00")
@@ -370,10 +370,22 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 except Exception as e:
                     print(f"Warning: Failed to translate to {translate_to}: {e}. Falling back to original transcription.")
 
+            # Auto-escalado de fuente basado en el ancho del lienzo
+            target_width = width * (font_width_percent / 100.0)
+            estimated_chars_per_line = 18 # Promedio para chunks de 4 palabras
+
+            # Tamaño de fuente = Ancho objetivo / (Caracteres * Proporción de ancho de la fuente)
+            calculated_font_size = int(target_width / (estimated_chars_per_line * 0.55))
+
+            # Mínimo de seguridad para evitar errores en FFmpeg
+            calculated_font_size = max(12, calculated_font_size)
+
+            print(f"   -> 📏 Auto-ajuste de fuente: Lienzo {width}px | Meta {font_width_percent}% | Tamaño final ASS: {calculated_font_size}")
+
             # Generate ASS Content
             print("Generating ASS subtitles...")
             ass_content = self.generate_ass_content(
-                chunks, font_name, font_size, real_primary, real_highlight, real_outline, real_shadow, alignment, platform_safe_zone, width, height, outline_thickness, shadow_offset
+                chunks, font_name, calculated_font_size, real_primary, real_highlight, real_outline, real_shadow, alignment, platform_safe_zone, width, height, outline_thickness, shadow_offset
             )
 
             # Save to ComfyUI temp directory

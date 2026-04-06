@@ -23,38 +23,6 @@ app.registerExtension({
             nodeType.prototype.onNodeCreated = function () {
                 const r = onNodeCreated ? onNodeCreated.apply(this, arguments) : undefined;
 
-                // Retrasamos el parcheo 100ms para asegurar que ComfyUI inyectó los widgets
-                setTimeout(() => {
-                    if (!this.widgets) return; // Seguridad extra
-
-                    const colorWidgets = ["primary_color", "highlight_color", "outline_color", "shadow_color"];
-
-                    for (const w of this.widgets) {
-                        if (colorWidgets.includes(w.name) && !w._meisoft_patched) {
-                            w._meisoft_patched = true; // Evitar doble parcheo
-                            const origDraw = w.draw;
-
-                            w.draw = function(ctx, node, width, y, widget_height) {
-                                if (origDraw) origDraw.apply(this, arguments);
-
-                                const swatchWidth = 30;
-                                const margin = 5;
-                                ctx.save();
-                                ctx.shadowColor = "rgba(0,0,0,0.5)";
-                                ctx.shadowBlur = 4;
-                                ctx.fillStyle = COLOR_MAP[this.value] || "#FFFFFF";
-
-                                ctx.beginPath();
-                                ctx.roundRect(width - swatchWidth - margin, y + margin, swatchWidth, widget_height - (margin * 2), 4);
-                                ctx.fill();
-                                ctx.strokeStyle = "rgba(255,255,255,0.2)";
-                                ctx.stroke();
-                                ctx.restore();
-                            };
-                        }
-                    }
-                }, 100);
-
                 // Forzamos un tamaño mínimo para asegurar que la preview quepa
                 this.size[1] = Math.max(this.size[1] || 0, 340);
                 return r;
@@ -99,42 +67,64 @@ app.registerExtension({
                 }
 
                 ctx.save();
-                const boxHeight = 60;
+                const boxHeight = 100;
                 const yBox = this.size[1] - boxHeight - 15;
                 const xBox = 15;
                 const wBox = this.size[0] - 30;
 
-                const gradient = ctx.createLinearGradient(xBox, yBox, xBox, yBox + boxHeight);
-                gradient.addColorStop(0, "#1a1a1a");
-                gradient.addColorStop(1, "#0a0a0a");
+                // Fondo Cinematográfico (Gradiente Radial)
+                const cx = xBox + wBox / 2;
+                const cy = yBox + boxHeight / 2;
+                const radius = Math.max(wBox, boxHeight);
+                const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+                gradient.addColorStop(0, "#2a3b4c"); // Centro azulado/gris oscuro
+                gradient.addColorStop(1, "#050505"); // Bordes negro absoluto
+
                 ctx.fillStyle = gradient;
                 ctx.beginPath();
                 ctx.roundRect(xBox, yBox, wBox, boxHeight, 10);
                 ctx.fill();
-                ctx.strokeStyle = "#444";
+
+                // Borde sutil para enmarcar
+                ctx.strokeStyle = "rgba(255, 255, 255, 0.1)";
                 ctx.lineWidth = 1;
                 ctx.stroke();
 
+                const fontWidthPercent = getVal("font_width_percent", 80);
+
                 const words = [
-                    { text: "MIRA ", color: primaryColor, scale: 1.0, glow: false },
-                    { text: "ESTE ", color: primaryColor, scale: 1.0, glow: false },
-                    { text: "NUEVO ", color: primaryColor, scale: 1.0, glow: false },
-                    { text: "EFECTO", color: highlightColor, scale: 1.25, glow: true }
+                    { text: "TEXTO ", color: primaryColor, scale: 1.0, glow: false },
+                    { text: "VIRAL", color: highlightColor, scale: 1.25, glow: true }
                 ];
 
-                let totalWidth = 0;
+                // Calculate base width at a standard font size
+                const baseFontSize = 50;
+                let baseTotalWidth = 0;
                 words.forEach(w => {
-                    ctx.font = `bold ${Math.round(22 * w.scale)}px "${fontName}", sans-serif`;
-                    totalWidth += ctx.measureText(w.text).width;
+                    ctx.font = `bold ${Math.round(baseFontSize * w.scale)}px "${fontName}", sans-serif`;
+                    baseTotalWidth += ctx.measureText(w.text).width;
                 });
 
-                let currentX = (this.size[0] / 2) - (totalWidth / 2);
+                // Target width based on percentage of box width
+                const targetWidth = wBox * (fontWidthPercent / 100.0);
+
+                // Scale factor to reach target width
+                const scaleFactor = targetWidth / baseTotalWidth;
+                const finalBaseFontSize = baseFontSize * scaleFactor;
+
+                let actualTotalWidth = 0;
+                words.forEach(w => {
+                    ctx.font = `bold ${Math.round(finalBaseFontSize * w.scale)}px "${fontName}", sans-serif`;
+                    actualTotalWidth += ctx.measureText(w.text).width;
+                });
+
+                let currentX = xBox + (wBox / 2) - (actualTotalWidth / 2);
                 const textY = yBox + (boxHeight / 2);
                 ctx.textBaseline = "middle";
                 ctx.lineJoin = "round";
 
                 words.forEach(w => {
-                    const fontSize = Math.round(22 * w.scale);
+                    const fontSize = Math.round(finalBaseFontSize * w.scale);
                     ctx.font = `bold ${fontSize}px "${fontName}", sans-serif`;
 
                     // Hard drop shadow
