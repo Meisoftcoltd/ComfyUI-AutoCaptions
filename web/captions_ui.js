@@ -92,10 +92,19 @@ app.registerExtension({
 
                 const fontWidthPercent = getVal("font_width_percent", 80);
 
+                const alignment = getVal("alignment", "Bottom-Center");
+
                 const words = [
-                    { text: "TEXTO ", color: primaryColor, scale: 1.0, glow: false },
-                    { text: "VIRAL", color: highlightColor, scale: 1.25, glow: true }
+                    { text: "LOREM IPSUM ", color: primaryColor, scale: 1.0, glow: false },
+                    { text: "DOLOR SIT", color: highlightColor, scale: 1.0, glow: false }
                 ];
+
+                // Apply padding for safety margin (e.g. 10% of box width/height)
+                const paddingX = wBox * 0.10;
+                const paddingY = boxHeight * 0.10;
+
+                const paddedWBox = wBox - (paddingX * 2);
+                const paddedHBox = boxHeight - (paddingY * 2);
 
                 // Calculate base width at a standard font size
                 const baseFontSize = 50;
@@ -105,8 +114,8 @@ app.registerExtension({
                     baseTotalWidth += ctx.measureText(w.text).width;
                 });
 
-                // Target width based on percentage of box width
-                const targetWidth = wBox * (fontWidthPercent / 100.0);
+                // Target width based on percentage of padded box width
+                const targetWidth = paddedWBox * (fontWidthPercent / 100.0);
 
                 // Scale factor to reach target width
                 const scaleFactor = targetWidth / baseTotalWidth;
@@ -118,9 +127,32 @@ app.registerExtension({
                     actualTotalWidth += ctx.measureText(w.text).width;
                 });
 
-                let currentX = xBox + (wBox / 2) - (actualTotalWidth / 2);
-                const textY = yBox + (boxHeight / 2);
-                ctx.textBaseline = "middle";
+                // Parse alignment into vertical and horizontal components
+                const [vertAlign, horizAlign] = alignment.split('-');
+
+                let startX = xBox + paddingX;
+                if (horizAlign === "Center") {
+                    startX = xBox + (wBox / 2) - (actualTotalWidth / 2);
+                } else if (horizAlign === "Right") {
+                    startX = xBox + wBox - paddingX - actualTotalWidth;
+                }
+
+                let textY = yBox + paddingY;
+                if (vertAlign === "Mid") {
+                    textY = yBox + (boxHeight / 2);
+                } else if (vertAlign === "Bottom") {
+                    textY = yBox + boxHeight - paddingY;
+                }
+
+                if (vertAlign === "Top") {
+                     ctx.textBaseline = "top";
+                } else if (vertAlign === "Mid") {
+                     ctx.textBaseline = "middle";
+                } else if (vertAlign === "Bottom") {
+                     ctx.textBaseline = "bottom";
+                }
+
+                let currentX = startX;
                 ctx.lineJoin = "round";
 
                 words.forEach(w => {
