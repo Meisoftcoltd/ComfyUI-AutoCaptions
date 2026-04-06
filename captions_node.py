@@ -7,6 +7,8 @@ import torch
 import torchaudio
 import numpy as np
 import cv2
+import re
+from tqdm import tqdm
 
 # ComfyUI specific imports
 import folder_paths
@@ -408,7 +410,6 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             final_video_path = os.path.join(temp_dir, final_video_filename)
 
             # FFmpeg Command to Combine Frames, Burn Subtitles and Add Audio
-            print(f"Generating video and burning subtitles to {final_video_path}...")
             filter_str = f"subtitles='{escaped_subs_path}':fontsdir='{escaped_fonts_dir}'"
 
             ffmpeg_burn_cmd = [
@@ -427,12 +428,48 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 final_video_path
             ]
 
+            # FFmpeg Command Execution con barra de progreso
+            print(f"Generating video and burning subtitles to {final_video_path}...")
+
             try:
-                subprocess.run(ffmpeg_burn_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                # Usamos Popen para leer la salida línea por línea en tiempo real
+                process = subprocess.Popen(
+                    ffmpeg_burn_cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    universal_newlines=True
+                )
+
+                # Barra de progreso profesional apuntando al total de frames
+                pbar = tqdm(total=batch_size, desc="🎬 Renderizando Video", unit="frame", dynamic_ncols=True)
+
+                # Expresión regular para cazar el frame actual en el output de FFmpeg
+                frame_pattern = re.compile(r"frame=\s*(\d+)")
+                last_frame = 0
+
+                # Leemos el stderr de FFmpeg (donde escupe el progreso)
+                for line in process.stderr:
+                    match = frame_pattern.search(line)
+                    if match:
+                        current_frame = int(match.group(1))
+                        frames_done = current_frame - last_frame
+                        if frames_done > 0:
+                            pbar.update(frames_done)
+                            last_frame = current_frame
+
+                process.wait()
+                pbar.close()
+
+                if process.returncode != 0:
+                    print(f"Error burning subtitles: FFmpeg returned code {process.returncode}")
+                    return (images, audio, "") # Fallback a la imagen original si falla
+
                 print("Successfully generated final video.")
-            except subprocess.CalledProcessError as e:
-                print(f"Error burning subtitles: {e.stderr.decode()}")
-                return (images, audio, "") # Fallback to original
+
+            except Exception as e:
+                print(f"Error executing FFmpeg: {e}")
+                return (images, audio, "")
 
             # Read back the video frames into a tensor
             print("Reading video back into ComfyUI tensor...")
