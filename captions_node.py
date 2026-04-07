@@ -54,6 +54,7 @@ class AutoCaptionsNode:
                 "fps": ("FLOAT", {"default": 30.0, "min": 1.0, "max": 120.0}),
                 "font_name": (POPULAR_FONTS, {"default": "Bangers"}),
                 "font_width_percent": ("INT", {"default": 80, "min": 10, "max": 200}),
+                "max_words_per_line": ("INT", {"default": 4, "min": 1, "max": 15}),
                 "outline_thickness": ("INT", {"default": 3, "min": 0, "max": 20}),
                 "shadow_offset": ("INT", {"default": 5, "min": 0, "max": 20}),
                 "primary_color": (color_names, {"default": "Blanco Puro"}),
@@ -150,14 +151,15 @@ class AutoCaptionsNode:
         }
         ass_alignment = align_map.get(alignment, 2)
 
-        # 2. Translate MarginV
+        # 2. Translate MarginV (Solo para Bottom)
         margin_map = {
             "TikTok": 250,
             "IG Reels": 200,
             "YT Shorts": 150,
             "None": 20
         }
-        margin_v = margin_map.get(platform_safe_zone, 20)
+        is_bottom = alignment in ["Bottom-Left", "Bottom-Center", "Bottom-Right"]
+        margin_v = margin_map.get(platform_safe_zone, 20) if is_bottom else 20
 
         # Convert colors
         prim_ass = self.hex_to_ass_color(primary_color)
@@ -171,6 +173,7 @@ ScriptType: v4.00+
 PlayResX: {play_res_x}
 PlayResY: {play_res_y}
 WrapStyle: 1
+ScaledBorderAndShadow: yes
 YCbCr Matrix: None
 
 [V4+ Styles]
@@ -262,7 +265,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
         return chunks
 
-    def generate_captions(self, images, audio, whisper_model, fps, font_name, font_width_percent, outline_thickness, shadow_offset, primary_color, highlight_color, outline_color, shadow_color, alignment, platform_safe_zone, translate_to):
+    def generate_captions(self, images, audio, whisper_model, fps, font_name, font_width_percent, max_words_per_line, outline_thickness, shadow_offset, primary_color, highlight_color, outline_color, shadow_color, alignment, platform_safe_zone, translate_to):
 
         real_primary = COLOR_MAP.get(primary_color, "#FFFFFF")
         real_highlight = COLOR_MAP.get(highlight_color, "#FFFF00")
@@ -343,7 +346,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             print(f"Transcription complete. Total words found: {len(all_words)}")
 
             # Process chunks
-            chunks = self.group_words_into_chunks(all_words, max_words=4)
+            chunks = self.group_words_into_chunks(all_words, max_words=max_words_per_line)
 
             # Handle non-English translation via deep-translator
             if translate_to not in ["Original", "English"]:
@@ -364,8 +367,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             target_width = width * (font_width_percent / 100.0)
             estimated_chars_per_line = 18 # Promedio para chunks de 4 palabras
 
-            # Tamaño de fuente = Ancho objetivo / (Caracteres * Proporción de ancho de la fuente)
-            calculated_font_size = int(target_width / (estimated_chars_per_line * 0.55))
+            # Multiplicador x2.0 porque ASS toma el font_size como altura, no como anchura.
+            calculated_font_size = int((target_width * 2.0) / (estimated_chars_per_line * 0.55))
 
             # Mínimo de seguridad para evitar errores en FFmpeg
             calculated_font_size = max(12, calculated_font_size)
@@ -393,15 +396,15 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             escaped_subs_path = self.escape_ffmpeg_path(temp_subs_path)
             escaped_fonts_dir = self.escape_ffmpeg_path(fonts_dir)
 
-            # FFmpeg Command to generate transparent PNG sequence with burned subtitles
-            filter_str = f"subtitles='{escaped_subs_path}':fontsdir='{escaped_fonts_dir}'"
+            # FFmpeg Command to generate transparent PNG sequence
+            filter_str = f"subtitles='{escaped_subs_path}':fontsdir='{escaped_fonts_dir}':alpha=1"
 
             ffmpeg_cmd = [
                 "ffmpeg",
                 "-y",
                 "-f", "lavfi",
                 "-i", f"color=c=black@0.0:s={width}x{height}:r={fps}",
-                "-vf", f"{filter_str},format=rgba",
+                "-vf", f"format=rgba,{filter_str}",
                 "-frames:v", str(batch_size),
                 "-vcodec", "png",
                 os.path.join(temp_subs_frames_dir, "sub_%05d.png")
