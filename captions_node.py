@@ -53,7 +53,7 @@ class AutoCaptionsNode:
                 "whisper_model": (["tiny", "base", "small", "medium", "large-v2", "large-v3"], {"default": "large-v3"}),
                 "fps": ("FLOAT", {"default": 30.0, "min": 1.0, "max": 120.0}),
                 "font_name": (POPULAR_FONTS, {"default": "Bangers"}),
-                "font_width_percent": ("INT", {"default": 80, "min": 10, "max": 100}),
+                "font_width_percent": ("INT", {"default": 80, "min": 10, "max": 200}),
                 "outline_thickness": ("INT", {"default": 3, "min": 0, "max": 20}),
                 "shadow_offset": ("INT", {"default": 5, "min": 0, "max": 20}),
                 "primary_color": (color_names, {"default": "Blanco Puro"}),
@@ -171,6 +171,7 @@ ScriptType: v4.00+
 PlayResX: {play_res_x}
 PlayResY: {play_res_y}
 WrapStyle: 1
+YCbCr Matrix: None
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
@@ -392,9 +393,6 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             escaped_subs_path = self.escape_ffmpeg_path(temp_subs_path)
             escaped_fonts_dir = self.escape_ffmpeg_path(fonts_dir)
 
-            # Calculate duration for the black dummy input
-            duration = batch_size / fps
-
             # FFmpeg Command to generate transparent PNG sequence with burned subtitles
             filter_str = f"subtitles='{escaped_subs_path}':fontsdir='{escaped_fonts_dir}'"
 
@@ -402,8 +400,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 "ffmpeg",
                 "-y",
                 "-f", "lavfi",
-                "-i", f"color=c=black@0.0:s={width}x{height}:d={duration}:r={fps}",
-                "-vf", filter_str,
+                "-i", f"color=c=black@0.0:s={width}x{height}:r={fps}",
+                "-vf", f"{filter_str},format=rgba",
+                "-frames:v", str(batch_size),
                 "-vcodec", "png",
                 os.path.join(temp_subs_frames_dir, "sub_%05d.png")
             ]
@@ -451,32 +450,31 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 print(f"Error executing FFmpeg: {e}")
                 return (images, audio, "")
 
-            # Alpha Compositing
-            print("Applying lossless Alpha Compositing...")
+            # Alpha Compositing 100% PyTorch Native
+            print("Applying lossless Alpha Compositing on GPU/CPU...")
             out_images = images.clone()
+            device = out_images.device # Identificamos dónde vive el tensor (ej. 'cuda:0')
 
-            # Use PyTorch directly for blending
             for i in range(batch_size):
                 sub_frame_path = os.path.join(temp_subs_frames_dir, f"sub_{i+1:05d}.png")
 
                 if os.path.exists(sub_frame_path):
-                    # Read image with alpha channel
+                    # Leemos la imagen (BGRA) con OpenCV
                     sub_img_bgra = cv2.imread(sub_frame_path, cv2.IMREAD_UNCHANGED)
 
                     if sub_img_bgra is not None and sub_img_bgra.shape[2] == 4:
-                        # Extract alpha and convert to [0.0, 1.0]
-                        alpha = (sub_img_bgra[:, :, 3].astype(np.float32) / 255.0)
+                        # Convertir BGRA a RGBA
+                        sub_img_rgba = cv2.cvtColor(sub_img_bgra, cv2.COLOR_BGRA2RGBA)
 
-                        # Expand dimensions for broadcasting [H, W, 1]
-                        alpha = np.expand_dims(alpha, axis=-1)
+                        # Convertir directamente a Tensor y moverlo al mismo dispositivo que el video
+                        sub_tensor = torch.from_numpy(sub_img_rgba.astype(np.float32) / 255.0).to(device)
 
-                        # Extract BGR, convert to RGB and to [0.0, 1.0]
-                        sub_img_rgb = cv2.cvtColor(sub_img_bgra[:, :, :3], cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+                        # Separar RGB y Alpha [H, W, 1]
+                        text_rgb = sub_tensor[:, :, :3]
+                        alpha = sub_tensor[:, :, 3:4]
 
-                        # Apply to original tensor frame: out = img * (1 - alpha) + text_rgb * alpha
-                        frame_tensor = out_images[i].numpy() # shape [H, W, C]
-                        blended_frame = frame_tensor * (1.0 - alpha) + sub_img_rgb * alpha
-                        out_images[i] = torch.from_numpy(blended_frame)
+                        # Fusión matemática nativa en PyTorch
+                        out_images[i] = out_images[i] * (1.0 - alpha) + text_rgb * alpha
 
             # Print output for monitoring
             print("\n--- Generated Chunks ---")
