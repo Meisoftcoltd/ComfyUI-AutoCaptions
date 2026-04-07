@@ -50,7 +50,7 @@ class AutoCaptionsNode:
             "required": {
                 "images": ("IMAGE",),
                 "audio": ("AUDIO",),
-                "whisper_model": (["tiny", "base", "small", "medium", "large-v2", "large-v3"], {"default": "large-v3"}),
+                "whisper_model": (["tiny", "base", "small", "medium", "large-v2", "large-v3", "large-v3-turbo", "distil-large-v3"], {"default": "large-v3-turbo"}),
                 "fps": ("FLOAT", {"default": 30.0, "min": 1.0, "max": 120.0}),
                 "font_name": (POPULAR_FONTS, {"default": "Bangers"}),
                 "font_width_percent": ("INT", {"default": 80, "min": 10, "max": 200}),
@@ -204,8 +204,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     t_start_ms = int((word["start"] - chunk["start"]) * 1000)
                     t_end_ms = int((word["end"] - chunk["start"]) * 1000)
 
-                    # Simpler approach matching user request:
-                    word_tag = f"{{\\t({t_start_ms},{t_start_ms},\\c{high_ass}\\fscx120\\fscy120)\\t({t_start_ms},{t_end_ms},\\c{prim_ass}\\fscx100\\fscy100)}}"
+                    # Tiempos del degradado (15% in, 70% hold, 15% out)
+                    t1 = t_start_ms
+                    t2 = t_start_ms + int(duration_ms * 0.15)
+                    t3 = t_start_ms + int(duration_ms * 0.85)
+                    t4 = t_end_ms
+
+                    # Tag ASS con doble transición (Fade IN y Fade OUT)
+                    word_tag = f"{{\\t({t1},{t2},\\c{high_ass}\\fscx120\\fscy120)\\t({t3},{t4},\\c{prim_ass}\\fscx100\\fscy100)}}"
                     reset_tag = f"{{\\c{prim_ass}\\fscx100\\fscy100}}"
 
                     space = " " if i < len(chunk["words"]) - 1 else ""
@@ -336,7 +342,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
             print("Transcribing audio...")
             whisper_task = "translate" if translate_to == "English" else "transcribe"
-            segments, info = model.transcribe(temp_audio_path, word_timestamps=True, task=whisper_task)
+            segments, info = model.transcribe(
+                temp_audio_path,
+                word_timestamps=True,
+                task=whisper_task,
+                condition_on_previous_text=False
+            )
 
             all_words = []
             for segment in segments:
@@ -403,10 +414,13 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 "ffmpeg",
                 "-y",
                 "-f", "lavfi",
-                "-i", f"color=c=black@0.0:s={width}x{height}:r={fps}",
-                "-vf", f"format=rgba,{filter_str}",
+                # Forzamos format=rgba directamente en el lienzo generador
+                "-i", f"color=c=black@0.0:s={width}x{height}:r={fps},format=rgba",
+                "-vf", f"{filter_str}",
                 "-frames:v", str(batch_size),
                 "-vcodec", "png",
+                # Obligamos al encoder PNG a guardar el canal Alpha
+                "-pix_fmt", "rgba",
                 os.path.join(temp_subs_frames_dir, "sub_%05d.png")
             ]
 
