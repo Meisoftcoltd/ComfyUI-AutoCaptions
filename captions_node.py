@@ -50,6 +50,7 @@ class AutoCaptionsNode:
             "required": {
                 "images": ("IMAGE",),
                 "audio": ("AUDIO",),
+                "whisper_model": (["tiny", "base", "small", "medium", "large-v2", "large-v3"], {"default": "large-v3"}),
                 "fps": ("FLOAT", {"default": 30.0, "min": 1.0, "max": 120.0}),
                 "font_name": (POPULAR_FONTS, {"default": "Bangers"}),
                 "font_width_percent": ("INT", {"default": 80, "min": 10, "max": 100}),
@@ -260,7 +261,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
         return chunks
 
-    def generate_captions(self, images, audio, fps, font_name, font_width_percent, outline_thickness, shadow_offset, primary_color, highlight_color, outline_color, shadow_color, alignment, platform_safe_zone, translate_to):
+    def generate_captions(self, images, audio, whisper_model, fps, font_name, font_width_percent, outline_thickness, shadow_offset, primary_color, highlight_color, outline_color, shadow_color, alignment, platform_safe_zone, translate_to):
 
         real_primary = COLOR_MAP.get(primary_color, "#FFFFFF")
         real_highlight = COLOR_MAP.get(highlight_color, "#FFFF00")
@@ -287,7 +288,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
         # Define paths
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        models_dir = os.path.join(current_dir, "models")
+        models_dir = os.path.join(folder_paths.models_dir, "faster-whisper")
         os.makedirs(models_dir, exist_ok=True)
 
         temp_dir = folder_paths.get_temp_directory()
@@ -314,31 +315,17 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             print(f"Error saving audio tensor: {e}")
             return (images, audio, "")
 
-        # Write images to a temp directory for FFmpeg
-        temp_frames_dir = os.path.join(temp_dir, f"temp_frames_{run_uuid}")
-        os.makedirs(temp_frames_dir, exist_ok=True)
-
-        print(f"Saving {batch_size} frames for FFmpeg processing...")
-        # images is float32 [0.0, 1.0] -> convert to uint8 [0, 255]
-        images_np = (images.cpu().numpy() * 255.0).astype(np.uint8)
-
-        for i in range(batch_size):
-            frame = images_np[i]
-            # Convert RGB (ComfyUI) to BGR (OpenCV)
-            frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-            frame_path = os.path.join(temp_frames_dir, f"frame_{i:05d}.png")
-            cv2.imwrite(frame_path, frame_bgr)
-
-        # Input to ffmpeg: sequence of frames
-        input_frames_pattern = os.path.join(temp_frames_dir, "frame_%05d.png")
+        # For Alpha Compositing: Create a temporary directory to hold FFmpeg generated PNGs
+        temp_subs_frames_dir = os.path.join(temp_dir, f"temp_subs_frames_{run_uuid}")
+        os.makedirs(temp_subs_frames_dir, exist_ok=True)
 
         try:
             device = "cuda" if torch.cuda.is_available() else "cpu"
             compute_type = "float16" if torch.cuda.is_available() else "int8"
-            print(f"Loading Whisper model (large-v3) on {device} ({compute_type})...")
+            print(f"Loading Whisper model ({whisper_model}) on {device} ({compute_type})...")
             try:
                 # Load the model, downloading it to the custom models directory
-                model = WhisperModel("large-v3", device=device, compute_type=compute_type, download_root=models_dir)
+                model = WhisperModel(whisper_model, device=device, compute_type=compute_type, download_root=models_dir)
             except Exception as e:
                 print(f"Failed to load WhisperModel: {e}")
                 return (images, audio, "")
@@ -405,36 +392,29 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             escaped_subs_path = self.escape_ffmpeg_path(temp_subs_path)
             escaped_fonts_dir = self.escape_ffmpeg_path(fonts_dir)
 
-            # Generate Output Video Path
-            final_video_filename = f"autocaptions_{run_uuid}.mp4"
-            final_video_path = os.path.join(temp_dir, final_video_filename)
+            # Calculate duration for the black dummy input
+            duration = batch_size / fps
 
-            # FFmpeg Command to Combine Frames, Burn Subtitles and Add Audio
+            # FFmpeg Command to generate transparent PNG sequence with burned subtitles
             filter_str = f"subtitles='{escaped_subs_path}':fontsdir='{escaped_fonts_dir}'"
 
-            ffmpeg_burn_cmd = [
+            ffmpeg_cmd = [
                 "ffmpeg",
                 "-y",
-                "-framerate", str(fps),
-                "-i", input_frames_pattern,
-                "-i", temp_audio_path,
+                "-f", "lavfi",
+                "-i", f"color=c=black@0.0:s={width}x{height}:d={duration}:r={fps}",
                 "-vf", filter_str,
-                "-c:v", "libx264",
-                "-pix_fmt", "yuv420p",
-                "-preset", "fast",
-                "-crf", "19",
-                "-c:a", "aac",
-                "-b:a", "192k",
-                final_video_path
+                "-vcodec", "png",
+                os.path.join(temp_subs_frames_dir, "sub_%05d.png")
             ]
 
             # FFmpeg Command Execution con barra de progreso
-            print(f"Generating video and burning subtitles to {final_video_path}...")
+            print(f"Generating transparent subtitle frames to {temp_subs_frames_dir}...")
 
             try:
                 # Usamos Popen para leer la salida línea por línea en tiempo real
                 process = subprocess.Popen(
-                    ffmpeg_burn_cmd,
+                    ffmpeg_cmd,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
@@ -442,7 +422,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 )
 
                 # Barra de progreso profesional apuntando al total de frames
-                pbar = tqdm(total=batch_size, desc="🎬 Renderizando Video", unit="frame", dynamic_ncols=True)
+                pbar = tqdm(total=batch_size, desc="🎬 Renderizando Subtítulos (PNG)", unit="frame", dynamic_ncols=True)
 
                 # Expresión regular para cazar el frame actual en el output de FFmpeg
                 frame_pattern = re.compile(r"frame=\s*(\d+)")
@@ -462,34 +442,41 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 pbar.close()
 
                 if process.returncode != 0:
-                    print(f"Error burning subtitles: FFmpeg returned code {process.returncode}")
+                    print(f"Error generating subtitles: FFmpeg returned code {process.returncode}")
                     return (images, audio, "") # Fallback a la imagen original si falla
 
-                print("Successfully generated final video.")
+                print("Successfully generated subtitle frames.")
 
             except Exception as e:
                 print(f"Error executing FFmpeg: {e}")
                 return (images, audio, "")
 
-            # Read back the video frames into a tensor
-            print("Reading video back into ComfyUI tensor...")
-            cap = cv2.VideoCapture(final_video_path)
-            frames = []
-            while cap.isOpened():
-                ret, frame = cap.read()
-                if not ret:
-                    break
-                # Convert BGR (OpenCV) back to RGB (ComfyUI)
-                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                frames.append(frame_rgb)
-            cap.release()
+            # Alpha Compositing
+            print("Applying lossless Alpha Compositing...")
+            out_images = images.clone()
 
-            if not frames:
-                print("Error: Could not read frames from generated video.")
-                return (images, audio, temp_subs_path)
+            # Use PyTorch directly for blending
+            for i in range(batch_size):
+                sub_frame_path = os.path.join(temp_subs_frames_dir, f"sub_{i+1:05d}.png")
 
-            # Convert to float32 tensor [B, H, W, C] in range [0.0, 1.0]
-            out_images = torch.from_numpy(np.array(frames).astype(np.float32) / 255.0)
+                if os.path.exists(sub_frame_path):
+                    # Read image with alpha channel
+                    sub_img_bgra = cv2.imread(sub_frame_path, cv2.IMREAD_UNCHANGED)
+
+                    if sub_img_bgra is not None and sub_img_bgra.shape[2] == 4:
+                        # Extract alpha and convert to [0.0, 1.0]
+                        alpha = (sub_img_bgra[:, :, 3].astype(np.float32) / 255.0)
+
+                        # Expand dimensions for broadcasting [H, W, 1]
+                        alpha = np.expand_dims(alpha, axis=-1)
+
+                        # Extract BGR, convert to RGB and to [0.0, 1.0]
+                        sub_img_rgb = cv2.cvtColor(sub_img_bgra[:, :, :3], cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+
+                        # Apply to original tensor frame: out = img * (1 - alpha) + text_rgb * alpha
+                        frame_tensor = out_images[i].numpy() # shape [H, W, C]
+                        blended_frame = frame_tensor * (1.0 - alpha) + sub_img_rgb * alpha
+                        out_images[i] = torch.from_numpy(blended_frame)
 
             # Print output for monitoring
             print("\n--- Generated Chunks ---")
@@ -505,10 +492,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 except Exception:
                     pass
 
-            if os.path.exists(temp_frames_dir):
+            if os.path.exists(temp_subs_frames_dir):
                 import shutil
                 try:
-                    shutil.rmtree(temp_frames_dir)
+                    shutil.rmtree(temp_subs_frames_dir)
                 except Exception:
                     pass
 

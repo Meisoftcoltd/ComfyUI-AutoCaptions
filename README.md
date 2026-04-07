@@ -6,7 +6,8 @@ Este custom node procesa de forma nativa los tensores de `IMAGE` y `AUDIO` de Co
 
 ## ✨ Características Principales
 
-*   **⚡ Motor Ultra-Rápido:** Utiliza el modelo `large-v3` de `faster-whisper`, el cual se descarga y gestiona localmente dentro de la carpeta del nodo para evitar problemas de caché.
+*   **💎 Motor Lossless de Alpha Compositing:** Tus tensores originales jamás se comprimen. FFmpeg se usa exclusivamente para generar PNGs transparentes con los subtítulos, los cuales se fusionan matemáticamente con tus frames. ¡100% calidad visual garantizada!
+*   **⚡ Motor Ultra-Rápido y Caché Inteligente:** Utiliza `faster-whisper` con un selector dinámico de modelos (`tiny` hasta `large-v3`). Los modelos se guardan automáticamente en tu carpeta global de ComfyUI (`models/faster-whisper`) para compartir pesos y ahorrar espacio en disco.
 *   **🎤 Efecto Karaoke (Pop-in):** Sincronización precisa palabra por palabra. ¡Las palabras saltan (scale-up) y cambian al color de resalte justo cuando se pronuncian en inglés/original!
 *   **🧠 Agrupación Inteligente:** Agrupa las palabras en bloques de lectura rápida (máximo 4 palabras por línea) y aplica cortes naturales de respiración forzando saltos de línea al encontrar puntuación fuerte (comas, puntos, etc.).
 *   **🌍 Traducción Integrada:** Traduce tus subtítulos de forma automática a múltiples idiomas (Español, Francés, Alemán, Japonés, etc.) utilizando `deep-translator`.
