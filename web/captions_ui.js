@@ -36,9 +36,20 @@ app.registerExtension({
                 // Si el nodo está colapsado o aún no tiene widgets, no dibujamos
                 if (this.flags.collapsed || !this.widgets) return r;
 
+                // --- OPTIMIZACIÓN: O(1) Widget Lookup ---
+                // Solo reconstruimos el mapa si la referencia a la lista de widgets ha cambiado
+                // o si la cantidad de widgets es distinta a la procesada previamente.
+                if (!this.widgets_map || this._last_widgets_len !== this.widgets.length) {
+                    this.widgets_map = new Map();
+                    for (const w of this.widgets) {
+                        this.widgets_map.set(w.name, w);
+                    }
+                    this._last_widgets_len = this.widgets.length;
+                }
+
                 // Función segura para obtener el valor del widget
                 const getVal = (name, def) => {
-                    const w = this.widgets.find(x => x.name === name);
+                    const w = this.widgets_map.get(name);
                     return w ? w.value : def;
                 };
 
