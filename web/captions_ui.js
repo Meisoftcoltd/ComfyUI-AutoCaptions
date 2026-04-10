@@ -23,8 +23,51 @@ app.registerExtension({
             nodeType.prototype.onNodeCreated = function () {
                 const r = onNodeCreated ? onNodeCreated.apply(this, arguments) : undefined;
 
-                // Forzamos un tamaño mínimo para asegurar que la preview quepa
-                this.size[1] = Math.max(this.size[1] || 0, 340);
+                // Esperamos un poco para asegurarnos de que los widgets están creados
+                setTimeout(() => {
+                    if (this.widgets) {
+                        const getVal = (name, def) => {
+                            const w = this.widgets.find(w => w.name === name);
+                            return w ? w.value : def;
+                        };
+                        const videoWidth = getVal("width", 1080);
+                        const videoHeight = getVal("height", 1920);
+                        const aspectRatio = videoHeight / videoWidth;
+                        const wBox = this.size[0] - 30;
+                        const boxHeight = wBox * aspectRatio;
+
+                        const requiredNodeHeight = boxHeight + 200;
+                        this.size[1] = Math.max(this.size[1] || 0, requiredNodeHeight);
+                        this.setDirtyCanvas(true, true);
+                    } else {
+                        this.size[1] = Math.max(this.size[1] || 0, 340);
+                    }
+                }, 100);
+
+                return r;
+            };
+
+            // Re-evaluar tamaño cuando cambien width/height (opcional pero recomendado)
+            const onPropertyChanged = nodeType.prototype.onPropertyChanged;
+            nodeType.prototype.onPropertyChanged = function(property, value) {
+                const r = onPropertyChanged ? onPropertyChanged.apply(this, arguments) : undefined;
+                if (property === "width" || property === "height") {
+                    if (this.widgets) {
+                        const getVal = (name, def) => {
+                            const w = this.widgets.find(w => w.name === name);
+                            return w ? w.value : def;
+                        };
+                        const videoWidth = getVal("width", 1080);
+                        const videoHeight = getVal("height", 1920);
+                        const aspectRatio = videoHeight / videoWidth;
+                        const wBox = this.size[0] - 30;
+                        const boxHeight = wBox * aspectRatio;
+
+                        const requiredNodeHeight = boxHeight + 200;
+                        this.size[1] = Math.max(this.size[1] || 0, requiredNodeHeight);
+                        this.setDirtyCanvas(true, true);
+                    }
+                }
                 return r;
             };
 
@@ -68,20 +111,44 @@ app.registerExtension({
 
                 const fontName = getVal("font_name", "Bangers");
 
-                // Cargar la fuente dinámicamente si no está cargada
+                // Cargar la fuente dinámicamente si no está cargada (usando API FontFace localmente)
                 if (!loadedFonts.has(fontName) && fontName !== "Arial") {
                     loadedFonts.add(fontName);
-                    const link = document.createElement("link");
-                    link.rel = "stylesheet";
-                    link.href = `https://fonts.googleapis.com/css2?family=${fontName.replace(/ /g, "+")}&display=swap`;
-                    document.head.appendChild(link);
+
+                    const loadFont = (ext) => {
+                        const fontFile = fontName === "Bangers" ? "Bangers-Regular" :
+                                         fontName === "Anton" ? "Anton-Regular" :
+                                         fontName === "Montserrat" ? "Montserrat-Black" :
+                                         fontName === "Oswald" ? "Oswald-Bold" :
+                                         fontName === "Permanent Marker" ? "PermanentMarker-Regular" :
+                                         fontName === "Comic Neue" ? "ComicNeue-Bold" :
+                                         fontName;
+                        const font = new FontFace(fontName, `url(/meisoft/fonts/${fontFile}.${ext})`);
+                        return font.load().then((loadedFace) => {
+                            document.fonts.add(loadedFace);
+                        });
+                    };
+
+                    loadFont('ttf').catch((e) => {
+                        console.warn(`[Meisoft Auto Captions] Failed to load .ttf for ${fontName}, trying .otf...`, e);
+                        loadFont('otf').catch((err) => {
+                            console.error(`[Meisoft Auto Captions] Failed to load both .ttf and .otf for ${fontName}:`, err);
+                        });
+                    });
                 }
 
                 ctx.save();
-                const boxHeight = 100;
-                const yBox = this.size[1] - boxHeight - 15;
+
+                const videoWidth = getVal("width", 1080);
+                const videoHeight = getVal("height", 1920);
+
+                const aspectRatio = videoHeight / videoWidth;
+
                 const xBox = 15;
                 const wBox = this.size[0] - 30;
+                const boxHeight = wBox * aspectRatio;
+
+                const yBox = this.size[1] - boxHeight - 15;
 
                 // Fondo Cinematográfico (Gradiente Radial)
                 const cx = xBox + wBox / 2;
@@ -110,27 +177,35 @@ app.registerExtension({
                     { text: "DOLOR SIT", color: highlightColor, scale: 1.0, glow: false }
                 ];
 
+                // Replicate Python scaling math
+                // Target width in real video coordinates
+                const videoTargetWidth = videoWidth * (fontWidthPercent / 100.0);
+
+                // base calculated font size for the real video (assumes 18 * 0.55 constant)
+                const realCalculatedFontSize = Math.max(12, (videoTargetWidth * 2.0) / (18 * 0.55));
+
+                // Scale factor to translate real video sizes into our UI preview box
+                const uiScaleFactor = wBox / videoWidth;
+
+                // However, ASS fontsize is essentially line height.
+                // In canvas, px font sizes map somewhat to line height. We need to scale the real font size down to the UI box.
+                // Divide by 2 because ASS font size is scaled up by 2 relative to standard pixel size? (According to python target_width * 2.0)
+                // Actually the user explicitly told us to NOT divide by 2 here.
+                // "Aplica la fórmula base para estimar el tamaño: baseFontSize = (target_width * 2.0) / (18 * 0.55)."
+                let finalBaseFontSize = realCalculatedFontSize * uiScaleFactor;
+
+                // Scale outline and shadow relative to UI box
+                const scaledOutlineThickness = outlineThickness * uiScaleFactor;
+                const scaledShadowOffset = shadowOffset * uiScaleFactor;
+
                 // Apply padding for safety margin (e.g. 10% of box width/height)
-                const paddingX = wBox * 0.10;
-                const paddingY = boxHeight * 0.10;
+                // Actually, platform safe zones use static margins in python (e.g., 20px, 200px, 250px)
+                // Let's replicate standard 20px margin scaled
+                const marginV = 20 * uiScaleFactor;
+                const marginH = 20 * uiScaleFactor;
 
-                const paddedWBox = wBox - (paddingX * 2);
-                const paddedHBox = boxHeight - (paddingY * 2);
-
-                // Calculate base width at a standard font size
-                const baseFontSize = 50;
-                let baseTotalWidth = 0;
-                words.forEach(w => {
-                    ctx.font = `bold ${Math.round(baseFontSize * w.scale)}px "${fontName}", sans-serif`;
-                    baseTotalWidth += ctx.measureText(w.text).width;
-                });
-
-                // Target width based on percentage of padded box width
-                const targetWidth = paddedWBox * (fontWidthPercent / 100.0);
-
-                // Scale factor to reach target width
-                const scaleFactor = targetWidth / baseTotalWidth;
-                const finalBaseFontSize = baseFontSize * scaleFactor;
+                const paddedWBox = wBox - (marginH * 2);
+                const paddedHBox = boxHeight - (marginV * 2);
 
                 let actualTotalWidth = 0;
                 words.forEach(w => {
@@ -141,18 +216,26 @@ app.registerExtension({
                 // Parse alignment into vertical and horizontal components
                 const [vertAlign, horizAlign] = alignment.split('-');
 
-                let startX = xBox + paddingX;
+                let startX = xBox + marginH;
                 if (horizAlign === "Center") {
                     startX = xBox + (wBox / 2) - (actualTotalWidth / 2);
                 } else if (horizAlign === "Right") {
-                    startX = xBox + wBox - paddingX - actualTotalWidth;
+                    startX = xBox + wBox - marginH - actualTotalWidth;
                 }
 
-                let textY = yBox + paddingY;
+                let textY = yBox + marginV;
                 if (vertAlign === "Mid") {
                     textY = yBox + (boxHeight / 2);
                 } else if (vertAlign === "Bottom") {
-                    textY = yBox + boxHeight - paddingY;
+                    // Check if we have platform safe zone selected
+                    const platformSafeZone = getVal("platform_safe_zone", "None");
+                    let platformMargin = 0;
+                    if (platformSafeZone === "TikTok") platformMargin = 250;
+                    else if (platformSafeZone === "IG Reels") platformMargin = 200;
+                    else if (platformSafeZone === "YT Shorts") platformMargin = 150;
+
+                    const scaledPlatformMargin = platformMargin * uiScaleFactor;
+                    textY = yBox + boxHeight - marginV - scaledPlatformMargin;
                 }
 
                 if (vertAlign === "Top") {
@@ -173,12 +256,12 @@ app.registerExtension({
                     // Hard drop shadow
                     ctx.shadowColor = shadowColor;
                     ctx.shadowBlur = 0;
-                    ctx.shadowOffsetX = shadowOffset;
-                    ctx.shadowOffsetY = shadowOffset;
+                    ctx.shadowOffsetX = scaledShadowOffset;
+                    ctx.shadowOffsetY = scaledShadowOffset;
 
                     // Stroke
-                    if (outlineThickness > 0) {
-                        ctx.lineWidth = outlineThickness * 2; // multiply by 2 because stroke is centered
+                    if (scaledOutlineThickness > 0) {
+                        ctx.lineWidth = scaledOutlineThickness * 2; // multiply by 2 because stroke is centered
                         ctx.strokeStyle = outlineColor;
                         ctx.strokeText(w.text, currentX, textY);
                     }
