@@ -132,13 +132,17 @@ class AutoCaptionsNode:
 
     def format_time_ass(self, seconds):
         """Formats seconds to ASS time format: H:MM:SS.cs"""
-        hours = int(seconds // 3600)
-        minutes = int((seconds % 3600) // 60)
-        secs = int(seconds % 60)
-        centiseconds = int(round((seconds - int(seconds)) * 100))
-        if centiseconds == 100:
-            secs += 1
-            centiseconds = 0
+        # Round to 2 decimal places to handle centiseconds correctly
+        total_centiseconds = int(round(seconds * 100))
+
+        centiseconds = total_centiseconds % 100
+        total_seconds = total_centiseconds // 100
+
+        secs = total_seconds % 60
+        total_minutes = total_seconds // 60
+
+        minutes = total_minutes % 60
+        hours = total_minutes // 60
 
         return f"{hours}:{minutes:02d}:{secs:02d}.{centiseconds:02d}"
 
