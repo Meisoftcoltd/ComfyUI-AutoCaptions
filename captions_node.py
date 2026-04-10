@@ -296,12 +296,15 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
             # Escalado basado en inputs width/height (Diseño UI)
             target_width = width * (font_width_percent / 100.0)
-            calculated_font_size = max(12, int((target_width * 2.0) / (18 * 0.55)))
+            calculated_font_size = max(12, int(target_width / (18 * 0.55)))
+
+            # Limpieza para que coincida con la metadata interna de la fuente
+            clean_font_name = font_name.replace("-Regular", "").replace("-Bold", "").replace("-Black", "")
 
             print(f"   -> 📏 Diseño Base: {width}x{height} | Target {font_width_percent}% | Size ASS: {calculated_font_size}")
 
             ass_content = self.generate_ass_content(
-                chunks, font_name, calculated_font_size, real_primary, real_highlight,
+                chunks, clean_font_name, calculated_font_size, real_primary, real_highlight,
                 real_outline, real_shadow, alignment, platform_safe_zone,
                 width, height, outline_thickness, shadow_offset, bold, italic
             )
