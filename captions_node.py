@@ -91,9 +91,12 @@ class AutoCaptionsNode:
         fonts_dir = os.path.join(current_dir, "fonts")
         os.makedirs(fonts_dir, exist_ok=True)
 
-        # Remove spaces for filename, lowercase for URL path, etc.
-        # Note: Google fonts directory paths and names can be complex. We'll use a best-effort approach.
-        formatted_name = font_name.replace(" ", "")
+        # Sanitize font_name to prevent path traversal
+        # Allow only alphanumeric and hyphens. This also removes spaces.
+        formatted_name = re.sub(r'[^a-zA-Z0-9-]', '', font_name)
+        if not formatted_name:
+            formatted_name = "Bangers" # Safe fallback
+
         font_filename = f"{formatted_name}-Regular.ttf"
         font_path = os.path.join(fonts_dir, font_filename)
 
