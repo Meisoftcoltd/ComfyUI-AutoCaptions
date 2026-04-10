@@ -31,6 +31,7 @@ def get_available_fonts():
     return sorted(fonts)
 
 AVAILABLE_FONTS = get_available_fonts()
+DEFAULT_FONT = AVAILABLE_FONTS[0] if AVAILABLE_FONTS else "Arial"
 
 # --- MAPA DE COLORES AMPLIADO ---
 COLOR_MAP = {
@@ -64,7 +65,7 @@ class AutoCaptionsNode:
                 "height": ("INT", {"default": 1920, "min": 128, "max": 8192, "step": 8}),
 
                 # --- Estilos de Fuente ---
-                "font_name": (AVAILABLE_FONTS, ),
+                "font_name": (AVAILABLE_FONTS, {"default": DEFAULT_FONT}),
                 "font_width_percent": ("INT", {"default": 80, "min": 10, "max": 200}),
                 "max_words_per_line": ("INT", {"default": 4, "min": 1, "max": 15}),
                 "outline_thickness": ("INT", {"default": 3, "min": 0, "max": 20}),
