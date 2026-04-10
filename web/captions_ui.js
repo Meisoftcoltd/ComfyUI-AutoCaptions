@@ -177,41 +177,40 @@ app.registerExtension({
                     { text: "DOLOR SIT", color: highlightColor, scale: 1.0, glow: false }
                 ];
 
-                // Replicate Python scaling math
-                // Target width in real video coordinates
+                // Replicate Python scaling math (Sin el * 2.0)
                 const videoTargetWidth = videoWidth * (fontWidthPercent / 100.0);
-
-                // base calculated font size for the real video (assumes 18 * 0.55 constant)
-                const realCalculatedFontSize = Math.max(12, (videoTargetWidth * 2.0) / (18 * 0.55));
-
-                // Scale factor to translate real video sizes into our UI preview box
+                const realCalculatedFontSize = Math.max(12, videoTargetWidth / (18 * 0.55));
                 const uiScaleFactor = wBox / videoWidth;
-
-                // However, ASS fontsize is essentially line height.
-                // In canvas, px font sizes map somewhat to line height. We need to scale the real font size down to the UI box.
-                // Divide by 2 because ASS font size is scaled up by 2 relative to standard pixel size? (According to python target_width * 2.0)
-                // Actually the user explicitly told us to NOT divide by 2 here.
-                // "Aplica la fórmula base para estimar el tamaño: baseFontSize = (target_width * 2.0) / (18 * 0.55)."
                 let finalBaseFontSize = realCalculatedFontSize * uiScaleFactor;
 
-                // Scale outline and shadow relative to UI box
                 const scaledOutlineThickness = outlineThickness * uiScaleFactor;
                 const scaledShadowOffset = shadowOffset * uiScaleFactor;
 
-                // Apply padding for safety margin (e.g. 10% of box width/height)
-                // Actually, platform safe zones use static margins in python (e.g., 20px, 200px, 250px)
-                // Let's replicate standard 20px margin scaled
                 const marginV = 20 * uiScaleFactor;
                 const marginH = 20 * uiScaleFactor;
 
                 const paddedWBox = wBox - (marginH * 2);
-                const paddedHBox = boxHeight - (marginV * 2);
 
+                // --- NUEVA LÓGICA DE AUTO-FIT (Evita que se salga del nodo) ---
                 let actualTotalWidth = 0;
                 words.forEach(w => {
                     ctx.font = `bold ${Math.round(finalBaseFontSize * w.scale)}px "${fontName}", sans-serif`;
                     actualTotalWidth += ctx.measureText(w.text).width;
                 });
+
+                if (actualTotalWidth > paddedWBox) {
+                    // Si el texto es más ancho que la caja, calculamos un factor de encogimiento
+                    const shrinkRatio = paddedWBox / actualTotalWidth;
+                    finalBaseFontSize = finalBaseFontSize * shrinkRatio;
+
+                    // Recalculamos el ancho total real con la nueva fuente reducida
+                    actualTotalWidth = 0;
+                    words.forEach(w => {
+                        ctx.font = `bold ${Math.round(finalBaseFontSize * w.scale)}px "${fontName}", sans-serif`;
+                        actualTotalWidth += ctx.measureText(w.text).width;
+                    });
+                }
+                // --------------------------------------------------------------
 
                 // Parse alignment into vertical and horizontal components
                 const [vertAlign, horizAlign] = alignment.split('-');
