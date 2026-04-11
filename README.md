@@ -14,7 +14,7 @@ Este custom node procesa de forma nativa los tensores de `IMAGE` y `AUDIO` de Co
 *   **🅰️ Directorio Local de Fuentes Inteligente:** Soporta fuentes `.ttf` y `.otf` alojadas en la nueva carpeta `/fonts`. El nodo escanea este directorio dinámicamente, y descarga un pack de fuentes populares de Google automáticamente al instalarse para que empieces a usarlas desde el primer segundo.
 *   **📏 Autoescalado Matemático:** Introduciendo las dimensiones base de tu diseño (`width` y `height`), el nodo ajusta matemáticamente proporciones, grosores de sombra y bordes asegurando que, sin importar la resolución real del video conectado, los textos siempre mantengan el aspecto deseado.
 *   **📱 Zonas Seguras (Safe Zones):** Márgenes integrados y precisos para **TikTok**, **IG Reels** y **YT Shorts** para asegurar que tu texto nunca quede oculto bajo la interfaz (botones de like, descripción) de la red social.
-*   **🖥️ Previsualización de Grado Estudio:** El nodo cuenta con un canvas interactivo WYSIWYG. Verás un texto de marcador ("LOREM IPSUM DOLOR SIT") sobre un fondo cinematográfico que refleja en tiempo real tus ajustes de colores, fuentes, grosores y alineación (con una Safe Zone simulada del 10%).
+*   **🖥️ Previsualización de Grado Estudio:** El nodo cuenta con un canvas interactivo WYSIWYG. Verás un texto de marcador ("lorem ipsum dolor sit amet consectetur adipiscing elit") sobre un fondo cinematográfico que refleja en tiempo real tus ajustes de colores, fuentes, grosores y alineación (con una Safe Zone simulada del 10%). El canvas respeta la configuración de palabras máximas y auto-envuelve las líneas dinámicamente.
 *   **📊 Feedback Asíncrono:** Durante el renderizado de FFmpeg, no sufrirás cuelgues ni pantallas congeladas. Una barra de progreso profesional (`tqdm`) te mostrará en la terminal el frame actual, ETA y velocidad de procesamiento.
 
 ---
@@ -32,8 +32,9 @@ El nodo `MeisoftAutoCaptions` acepta conexiones estándar de ComfyUI y ofrece un
 *   **`fps`**: Los cuadros por segundo (Frames Per Second) a los que se exportará el video (Min: 1.0, Max: 120.0). *Debe coincidir con tus frames de entrada para mantener la sincronización.*
 *   **`width`** y **`height`**: Las dimensiones base esperadas para el cálculo de bordes, sombras y escalas.
 *   **`font_name`**: Selección desplegable de las fuentes instaladas en la carpeta `/fonts`.
-*   **`font_width_percent`**: (10% - 100%) ¿Qué porcentaje de la pantalla debe ocupar el ancho de la línea de texto? El nodo calcula automáticamente el tamaño de fuente perfecto para lograr este porcentaje basado en la resolución designada.
-*   **`text_casing`**: Formato del texto ("Normal", "MAYÚSCULAS", "Primera Letra Mayúscula").
+*   **`font_width_percent`**: (10% - 200%) ¿Qué porcentaje de la pantalla debe ocupar el ancho de la línea de texto? El nodo calcula automáticamente el tamaño de fuente perfecto para lograr este porcentaje basado en la resolución designada.
+*   **`max_words_per_line`**: (Min: 1, Max: 15) Controla la cantidad máxima de palabras que pueden aparecer en una sola línea antes de forzar un salto de línea.
+*   **`text_casing`**: Formato del texto ("Normal", "Mayúsculas", "Capitalizado").
 *   **`bold`** / **`italic`**: Opciones booleanas para enfatizar el formato del texto.
 *   **`primary_color`**: El color base del texto cuando no está siendo pronunciado. (12 colores ampliados a elegir)
 *   **`highlight_color`**: El color al que cambia la palabra exacta en el momento en que se pronuncia (Efecto Karaoke).
@@ -44,7 +45,7 @@ El nodo `MeisoftAutoCaptions` acepta conexiones estándar de ComfyUI y ofrece un
     *   `None`: Margen estándar.
     *   `TikTok`: Margen muy alto para esquivar la descripción larga y los botones derechos.
     *   `IG Reels` / `YT Shorts`: Márgenes balanceados específicos para estas plataformas.
-*   **`translate_to`**: Traduce lo que se escucha en el audio. Selecciona `Original` para transcribir en el mismo idioma del audio. (Nota: Si traduces, se desactiva el pop-in palabra por palabra en favor de subtítulos completos por frase).
+*   **`translate_to`**: Traduce lo que se escucha en el audio. Opciones soportadas: `Original`, `English`, `Spanish`, `French`, `German`, `Italian`, `Portuguese`, `Japanese`, y `Chinese`. Selecciona `Original` para transcribir en el mismo idioma del audio. (Nota: Si traduces, se desactiva el pop-in palabra por palabra en favor de subtítulos completos por frase).
 
 ### 📤 Salidas (Outputs)
 *   **`images`**: (`IMAGE`) El tensor de imágenes con los subtítulos ya quemados de forma nativa.
