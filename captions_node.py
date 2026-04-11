@@ -70,7 +70,7 @@ class AutoCaptionsNode:
                 "max_words_per_line": ("INT", {"default": 4, "min": 1, "max": 15}),
                 "outline_thickness": ("INT", {"default": 3, "min": 0, "max": 20}),
                 "shadow_offset": ("INT", {"default": 5, "min": 0, "max": 20}),
-                "text_casing": (["Normal", "MAYÚSCULAS", "Primera Letra Mayúscula"], {"default": "Normal"}),
+                "text_casing": (["Normal", "Mayúsculas", "Capitalizado"], {"default": "Normal"}),
                 "bold": ("BOOLEAN", {"default": False}),
                 "italic": ("BOOLEAN", {"default": False}),
 
@@ -280,15 +280,15 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
             # ====== INICIO NUEVA LÓGICA DE TEXT CASING ======
             for chunk in chunks:
-                if text_casing == "MAYÚSCULAS":
+                if text_casing == "Mayúsculas":
                     chunk["text"] = chunk["text"].upper()
                     for w in chunk["words"]:
                         w["word"] = w["word"].upper()
-                elif text_casing == "Primera Letra Mayúscula":
+                elif text_casing == "Capitalizado":
                     chunk["text"] = chunk["text"].title()
                     for w in chunk["words"]:
                         w["word"] = w["word"].title()
-                # Si es "Normal", se deja tal cual lo entrega Whisper (Oración normal)
+                # Si es "Normal", se deja tal cual lo entrega Whisper
             # ====== FIN NUEVA LÓGICA DE TEXT CASING ======
 
             # Generar Texto Plano
