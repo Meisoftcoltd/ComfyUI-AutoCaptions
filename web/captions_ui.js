@@ -276,9 +276,11 @@ app.registerExtension({
                 } else if (vertAlign === "Bottom") {
                     const platformSafeZone = getVal("platform_safe_zone", "None");
                     let platformMargin = 0;
-                    if (platformSafeZone === "TikTok") platformMargin = 250;
-                    else if (platformSafeZone === "IG Reels") platformMargin = 200;
-                    else if (platformSafeZone === "YT Shorts") platformMargin = 150;
+
+                    // Zonas dinámicas basadas en el % del height real del video
+                    if (platformSafeZone === "TikTok") platformMargin = videoHeight * 0.18;
+                    else if (platformSafeZone === "IG Reels") platformMargin = videoHeight * 0.15;
+                    else if (platformSafeZone === "YT Shorts") platformMargin = videoHeight * 0.12;
 
                     const scaledPlatformMargin = platformMargin * uiScaleFactor;
                     // startY es el "techo" del bloque para que termine justo en el margen inferior

@@ -24,6 +24,16 @@ def optimize_font_names(fonts_dir):
         try:
             # Intentamos abrir la fuente para leer sus metadatos
             font = TTFont(filepath)
+
+            # --- NUEVA COMPROBACIÓN DE INTEGRIDAD ---
+            # Verificamos si tiene la tabla de mapeo (cmap) y datos de dibujo (glyf o CFF)
+            if not ('cmap' in font and ('glyf' in font or 'CFF ' in font)):
+                print(f"   -> 💀 Fuente sin glifos válidos (Incompatible): Eliminando '{filename}'...")
+                font.close()
+                os.remove(filepath)
+                continue
+            # ----------------------------------------
+
             name_record = font['name']
             internal_name = None
 
