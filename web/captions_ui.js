@@ -8,7 +8,11 @@ const COLOR_MAP = {
     "Rojo Intenso": "#FF0000",
     "Rosa Hot": "#FF00FF",
     "Naranja Vibrante": "#FFA500",
-    "Negro Absoluto": "#000000"
+    "Negro Absoluto": "#000000",
+    "Azul Océano": "#0000FF",
+    "Morado Profundo": "#800080",
+    "Oro Brillante": "#FFD700",
+    "Plata": "#C0C0C0"
 };
 
 const loadedFonts = new Set();
@@ -116,16 +120,12 @@ app.registerExtension({
                     loadedFonts.add(fontName);
 
                     const loadFont = (ext) => {
-                        const fontFile = fontName === "Bangers" ? "Bangers-Regular" :
-                                         fontName === "Anton" ? "Anton-Regular" :
-                                         fontName === "Montserrat" ? "Montserrat-Black" :
-                                         fontName === "Oswald" ? "Oswald-Bold" :
-                                         fontName === "Permanent Marker" ? "PermanentMarker-Regular" :
-                                         fontName === "Comic Neue" ? "ComicNeue-Bold" :
-                                         fontName;
-                        const font = new FontFace(fontName, `url(/meisoft/fonts/${fontFile}.${ext})`);
+                        // El nombre de la fuente es exactamente el nombre del archivo gracias a nuestro auto-renombrador
+                        const fontUrl = `/meisoft/fonts/${encodeURIComponent(fontName)}.${ext}`;
+                        const font = new FontFace(fontName, `url("${fontUrl}")`);
                         return font.load().then((loadedFace) => {
                             document.fonts.add(loadedFace);
+                            this.setDirtyCanvas(true, true); // Forzar repintado cuando cargue la fuente
                         });
                     };
 
@@ -172,10 +172,39 @@ app.registerExtension({
 
                 const alignment = getVal("alignment", "Bottom-Center");
 
-                const words = [
-                    { text: "LOREM IPSUM ", color: primaryColor, scale: 1.0, glow: false },
-                    { text: "DOLOR SIT", color: highlightColor, scale: 1.0, glow: false }
-                ];
+                // --- GENERADOR DINÁMICO DE TEXTO ---
+                const maxWords = getVal("max_words_per_line", 4);
+                const textCasing = getVal("text_casing", "Normal");
+
+                // Diccionario base de prueba
+                const dummySentence = "lorem ipsum dolor sit amet consectetur adipiscing elit".split(" ");
+                // Cortar al número de palabras que eligió el usuario
+                const activeWords = dummySentence.slice(0, Math.min(maxWords, dummySentence.length));
+
+                const words = activeWords.map((word, index) => {
+                    let formattedWord = word;
+
+                    // Aplicar Casing
+                    if (textCasing === "Mayúsculas") {
+                        formattedWord = word.toUpperCase();
+                    } else if (textCasing === "Capitalizado") {
+                        formattedWord = word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+                    }
+
+                    // Espacio final salvo para la última palabra
+                    const space = index < activeWords.length - 1 ? " " : "";
+
+                    // Efecto Karaoke: La última palabra usa el highlightColor, el resto el primaryColor
+                    const isLast = index === activeWords.length - 1;
+
+                    return {
+                        text: formattedWord + space,
+                        color: isLast ? highlightColor : primaryColor,
+                        scale: 1.0,
+                        glow: false
+                    };
+                });
+                // -----------------------------------
 
                 // Replicate Python scaling math (Sin el * 2.0)
                 const videoTargetWidth = videoWidth * (fontWidthPercent / 100.0);
