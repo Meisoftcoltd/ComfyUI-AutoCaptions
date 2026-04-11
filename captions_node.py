@@ -119,9 +119,21 @@ class AutoCaptionsNode:
         }
         ass_alignment = align_map.get(alignment, 2)
 
-        margin_map = {"TikTok": 250, "IG Reels": 200, "YT Shorts": 150, "None": 20}
+        # --- ZONAS SEGURAS DINÁMICAS BASADAS EN PORCENTAJES ---
         is_bottom = alignment in ["Bottom-Left", "Bottom-Center", "Bottom-Right"]
-        margin_v = margin_map.get(platform_safe_zone, 20) if is_bottom else 20
+
+        if is_bottom:
+            if platform_safe_zone == "TikTok":
+                margin_v = int(play_res_y * 0.18)  # 18% de margen inferior
+            elif platform_safe_zone == "IG Reels":
+                margin_v = int(play_res_y * 0.15)  # 15% de margen inferior
+            elif platform_safe_zone == "YT Shorts":
+                margin_v = int(play_res_y * 0.12)  # 12% de margen inferior
+            else:
+                margin_v = 20  # Margen por defecto sin zona segura
+        else:
+            margin_v = 20
+        # ------------------------------------------------------
 
         prim_ass = self.hex_to_ass_color(primary_color)
         high_ass = self.hex_to_ass_color(highlight_color)
