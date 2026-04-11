@@ -206,7 +206,15 @@ app.registerExtension({
                 });
                 // -----------------------------------
 
-                // Replicate Python scaling math (Sin el * 2.0)
+                // --- EXTRAER ESTILOS BOLD E ITALIC ---
+                const isBold = getVal("bold", false);
+                const isItalic = getVal("italic", false);
+                const fontStyleStr = `${isItalic ? "italic " : ""}${isBold ? "bold " : ""}`.trim();
+
+                // Función auxiliar para construir el string del font del Canvas
+                const getFontString = (size) => `${fontStyleStr ? fontStyleStr + " " : ""}${size}px "${fontName}", sans-serif`;
+
+                // Replicate Python scaling math
                 const videoTargetWidth = videoWidth * (fontWidthPercent / 100.0);
                 const realCalculatedFontSize = Math.max(12, videoTargetWidth / (18 * 0.55));
                 const uiScaleFactor = wBox / videoWidth;
@@ -217,45 +225,55 @@ app.registerExtension({
 
                 const marginV = 20 * uiScaleFactor;
                 const marginH = 20 * uiScaleFactor;
-
                 const paddedWBox = wBox - (marginH * 2);
 
-                // --- NUEVA LÓGICA DE AUTO-FIT (Evita que se salga del nodo) ---
-                let actualTotalWidth = 0;
+                // --- LÓGICA DE AUTO-WRAP (MULTILÍNEA) ---
+
+                // 1. Evitar que una sola palabra gigante rompa la caja
+                let maxWordWidth = 0;
                 words.forEach(w => {
-                    ctx.font = `bold ${Math.round(finalBaseFontSize * w.scale)}px "${fontName}", sans-serif`;
-                    actualTotalWidth += ctx.measureText(w.text).width;
+                    ctx.font = getFontString(Math.round(finalBaseFontSize * w.scale));
+                    maxWordWidth = Math.max(maxWordWidth, ctx.measureText(w.text.trim()).width);
                 });
 
-                if (actualTotalWidth > paddedWBox) {
-                    // Si el texto es más ancho que la caja, calculamos un factor de encogimiento
-                    const shrinkRatio = paddedWBox / actualTotalWidth;
-                    finalBaseFontSize = finalBaseFontSize * shrinkRatio;
-
-                    // Recalculamos el ancho total real con la nueva fuente reducida
-                    actualTotalWidth = 0;
-                    words.forEach(w => {
-                        ctx.font = `bold ${Math.round(finalBaseFontSize * w.scale)}px "${fontName}", sans-serif`;
-                        actualTotalWidth += ctx.measureText(w.text).width;
-                    });
+                if (maxWordWidth > paddedWBox) {
+                    finalBaseFontSize = finalBaseFontSize * (paddedWBox / maxWordWidth);
                 }
-                // --------------------------------------------------------------
 
-                // Parse alignment into vertical and horizontal components
+                // 2. Agrupar palabras en líneas inteligentemente
+                let lines = [];
+                let currentLine = [];
+                let currentLineWidth = 0;
+
+                words.forEach(w => {
+                    ctx.font = getFontString(Math.round(finalBaseFontSize * w.scale));
+                    const wWidth = ctx.measureText(w.text).width;
+
+                    if (currentLine.length > 0 && currentLineWidth + wWidth > paddedWBox) {
+                        lines.push({ words: currentLine, width: currentLineWidth });
+                        currentLine = [w];
+                        currentLineWidth = wWidth;
+                    } else {
+                        currentLine.push(w);
+                        currentLineWidth += wWidth;
+                    }
+                });
+                if (currentLine.length > 0) {
+                    lines.push({ words: currentLine, width: currentLineWidth });
+                }
+
+                // 3. Cálculos verticales del bloque de texto entero
+                const lineHeight = finalBaseFontSize * 1.2;
+                const totalTextHeight = lines.length * lineHeight;
+
+                // Extraer alineación
                 const [vertAlign, horizAlign] = alignment.split('-');
 
-                let startX = xBox + marginH;
-                if (horizAlign === "Center") {
-                    startX = xBox + (wBox / 2) - (actualTotalWidth / 2);
-                } else if (horizAlign === "Right") {
-                    startX = xBox + wBox - marginH - actualTotalWidth;
-                }
-
-                let textY = yBox + marginV;
+                // Determinar el Y inicial para empujar el bloque entero
+                let startY = yBox + marginV;
                 if (vertAlign === "Mid") {
-                    textY = yBox + (boxHeight / 2);
+                    startY = yBox + (boxHeight / 2) - (totalTextHeight / 2);
                 } else if (vertAlign === "Bottom") {
-                    // Check if we have platform safe zone selected
                     const platformSafeZone = getVal("platform_safe_zone", "None");
                     let platformMargin = 0;
                     if (platformSafeZone === "TikTok") platformMargin = 250;
@@ -263,45 +281,53 @@ app.registerExtension({
                     else if (platformSafeZone === "YT Shorts") platformMargin = 150;
 
                     const scaledPlatformMargin = platformMargin * uiScaleFactor;
-                    textY = yBox + boxHeight - marginV - scaledPlatformMargin;
+                    // startY es el "techo" del bloque para que termine justo en el margen inferior
+                    startY = yBox + boxHeight - marginV - scaledPlatformMargin - totalTextHeight;
                 }
 
-                if (vertAlign === "Top") {
-                     ctx.textBaseline = "top";
-                } else if (vertAlign === "Mid") {
-                     ctx.textBaseline = "middle";
-                } else if (vertAlign === "Bottom") {
-                     ctx.textBaseline = "bottom";
-                }
-
-                let currentX = startX;
+                ctx.textBaseline = "top";
                 ctx.lineJoin = "round";
 
-                words.forEach(w => {
-                    const fontSize = Math.round(finalBaseFontSize * w.scale);
-                    ctx.font = `bold ${fontSize}px "${fontName}", sans-serif`;
+                // --- 4. DIBUJAR CADA LÍNEA ---
+                lines.forEach((line, lineIndex) => {
+                    const textY = startY + (lineIndex * lineHeight);
 
-                    // Hard drop shadow
-                    ctx.shadowColor = shadowColor;
-                    ctx.shadowBlur = 0;
-                    ctx.shadowOffsetX = scaledShadowOffset;
-                    ctx.shadowOffsetY = scaledShadowOffset;
-
-                    // Stroke
-                    if (scaledOutlineThickness > 0) {
-                        ctx.lineWidth = scaledOutlineThickness * 2; // multiply by 2 because stroke is centered
-                        ctx.strokeStyle = outlineColor;
-                        ctx.strokeText(w.text, currentX, textY);
+                    // Alineación horizontal por línea
+                    let startX = xBox + marginH;
+                    if (horizAlign === "Center") {
+                        startX = xBox + (wBox / 2) - (line.width / 2);
+                    } else if (horizAlign === "Right") {
+                        startX = xBox + wBox - marginH - line.width;
                     }
 
-                    // Fill text
-                    ctx.shadowBlur = 0;
-                    ctx.shadowOffsetX = 0;
-                    ctx.shadowOffsetY = 0;
-                    ctx.fillStyle = w.color;
-                    ctx.fillText(w.text, currentX, textY);
+                    let currentX = startX;
 
-                    currentX += ctx.measureText(w.text).width;
+                    line.words.forEach(w => {
+                        const fontSize = Math.round(finalBaseFontSize * w.scale);
+                        ctx.font = getFontString(fontSize);
+
+                        // Sombra dura
+                        ctx.shadowColor = shadowColor;
+                        ctx.shadowBlur = 0;
+                        ctx.shadowOffsetX = scaledShadowOffset;
+                        ctx.shadowOffsetY = scaledShadowOffset;
+
+                        // Borde
+                        if (scaledOutlineThickness > 0) {
+                            ctx.lineWidth = scaledOutlineThickness * 2;
+                            ctx.strokeStyle = outlineColor;
+                            ctx.strokeText(w.text, currentX, textY);
+                        }
+
+                        // Relleno
+                        ctx.shadowBlur = 0;
+                        ctx.shadowOffsetX = 0;
+                        ctx.shadowOffsetY = 0;
+                        ctx.fillStyle = w.color;
+                        ctx.fillText(w.text, currentX, textY);
+
+                        currentX += ctx.measureText(w.text).width;
+                    });
                 });
 
                 ctx.restore();
