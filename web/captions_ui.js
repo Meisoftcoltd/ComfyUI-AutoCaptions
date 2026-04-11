@@ -278,7 +278,8 @@ app.registerExtension({
                     let platformMargin = 0;
 
                     // Zonas dinámicas basadas en el % del height real del video
-                    if (platformSafeZone === "TikTok") platformMargin = videoHeight * 0.18;
+                    if (platformSafeZone === "TikTok") platformMargin = videoHeight * 0.27;
+                    else if (platformSafeZone === "Facebook") platformMargin = videoHeight * 0.18;
                     else if (platformSafeZone === "IG Reels") platformMargin = videoHeight * 0.15;
                     else if (platformSafeZone === "YT Shorts") platformMargin = videoHeight * 0.12;
 

@@ -80,7 +80,7 @@ class AutoCaptionsNode:
                 "outline_color": (color_names, {"default": "Negro Absoluto"}),
                 "shadow_color": (color_names, {"default": "Negro Absoluto"}),
                 "alignment": (["Top-Left", "Top-Center", "Top-Right", "Mid-Left", "Mid-Center", "Mid-Right", "Bottom-Left", "Bottom-Center", "Bottom-Right"], {"default": "Bottom-Center"}),
-                "platform_safe_zone": (["None", "TikTok", "IG Reels", "YT Shorts"], {"default": "None"}),
+                "platform_safe_zone": (["None", "TikTok", "IG Reels", "YT Shorts", "Facebook"], {"default": "None"}),
                 "translate_to": (["Original", "English", "Spanish", "French", "German", "Italian", "Portuguese", "Japanese", "Chinese"], {"default": "Original"}),
             }
         }
@@ -124,7 +124,9 @@ class AutoCaptionsNode:
 
         if is_bottom:
             if platform_safe_zone == "TikTok":
-                margin_v = int(play_res_y * 0.18)  # 18% de margen inferior
+                margin_v = int(play_res_y * 0.27)  # 🚀 Subimos TikTok al 27% (flota sobre la descripción)
+            elif platform_safe_zone == "Facebook":
+                margin_v = int(play_res_y * 0.18)  # 📘 Facebook hereda el 18% (antiguo TikTok)
             elif platform_safe_zone == "IG Reels":
                 margin_v = int(play_res_y * 0.15)  # 15% de margen inferior
             elif platform_safe_zone == "YT Shorts":
