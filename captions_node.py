@@ -3,6 +3,7 @@ import subprocess
 import tempfile
 import uuid
 import urllib.request
+import shutil
 import torch
 import torchaudio
 import numpy as np
@@ -18,6 +19,11 @@ try:
     from faster_whisper import WhisperModel
 except ImportError:
     print("Warning: faster_whisper not found. Please ensure it is installed.")
+
+try:
+    from deep_translator import GoogleTranslator
+except ImportError:
+    GoogleTranslator = None
 
 # --- ESCANEO DINÁMICO DE FUENTES ---
 def get_available_fonts():
@@ -278,9 +284,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
             chunks = self.group_words_into_chunks(all_words, max_words=max_words_per_line)
 
-            if translate_to not in ["Original", "English"]:
+            if translate_to not in ["Original", "English"] and GoogleTranslator:
                 try:
-                    from deep_translator import GoogleTranslator
                     lang_map = {"Spanish": "es", "French": "fr", "German": "de", "Italian": "it", "Portuguese": "pt", "Japanese": "ja", "Chinese": "zh-CN"}
                     target_lang = lang_map.get(translate_to, "en")
                     print(f"Translating to {translate_to} ({target_lang})...")
@@ -400,7 +405,6 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 try: os.remove(temp_audio_path)
                 except: pass
             if os.path.exists(temp_subs_frames_dir):
-                import shutil
                 try: shutil.rmtree(temp_subs_frames_dir)
                 except: pass
 
