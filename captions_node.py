@@ -373,11 +373,13 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             # ====== ANTI-KILLED: FUSIÓN DE BAJA MEMORIA ======
             print("Applying lossless Alpha Compositing (Low VRAM mode)...")
 
+            # Transferimos a CPU una sola vez para mayor eficiencia
+            images_cpu = images.cpu()
             # Creamos un tensor vacío en la CPU en lugar de clonar todo a VRAM
-            out_images = torch.zeros_like(images, device="cpu")
+            out_images = torch.zeros_like(images_cpu, device="cpu")
 
             for i in range(batch_size):
-                base_frame = images[i].cpu() # Aseguramos que trabajamos en CPU
+                base_frame = images_cpu[i] # Ya está en CPU
                 sub_frame_path = os.path.join(temp_subs_frames_dir, f"sub_{i+1:05d}.png")
 
                 if os.path.exists(sub_frame_path):
