@@ -370,16 +370,21 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             except Exception as e:
                 return (images, audio, temp_subs_path, transcription_txt)
 
-            # ====== ANTI-KILLED: FUSIÓN DE BAJA MEMORIA ======
-            print("Applying lossless Alpha Compositing (Low VRAM mode)...")
+            # ====== ANTI-KILLED 2.0: FUSIÓN "IN-PLACE" Y BATCH CLEARING ======
+            print("Applying in-place Alpha Compositing (Ultra-Low RAM mode)...")
 
-            # Transferimos a CPU una sola vez para mayor eficiencia
+            # Guardamos el dispositivo original para devolverlo correctamente luego
+            original_device = images.device
             images_cpu = images.cpu()
-            # Creamos un tensor vacío en la CPU en lugar de clonar todo a VRAM
-            out_images = torch.zeros_like(images_cpu, device="cpu")
 
-            for i in range(batch_size):
-                base_frame = images_cpu[i] # Ya está en CPU
+            # Destruimos la referencia del tensor original para no tener duplicados
+            del images
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+            # Procesamos frame a frame sobrescribiendo la RAM existente
+            for i in tqdm(range(batch_size), desc="🖼️ Fusionando frames (In-Place)", unit="frame", dynamic_ncols=True):
                 sub_frame_path = os.path.join(temp_subs_frames_dir, f"sub_{i+1:05d}.png")
 
                 if os.path.exists(sub_frame_path):
@@ -389,17 +394,23 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                         sub_img_rgba = cv2.cvtColor(sub_img_bgra, cv2.COLOR_BGRA2RGBA)
                         sub_tensor = torch.from_numpy(sub_img_rgba.astype(np.float32) / 255.0)
 
-                        text_rgb = sub_tensor[:, :, :3]
                         alpha = sub_tensor[:, :, 3:4]
+                        text_rgb = sub_tensor[:, :, :3]
 
-                        # Fusión matemática en CPU (Evita colapso de RAM)
-                        out_images[i] = base_frame * (1.0 - alpha) + text_rgb * alpha
+                        # Fusión IN-PLACE: Operadores nativos mul_ y add_ (0 bytes extra de RAM)
+                        images_cpu[i].mul_(1.0 - alpha).add_(text_rgb * alpha)
 
                         del sub_tensor, text_rgb, alpha, sub_img_bgra, sub_img_rgba
-                    else:
-                        out_images[i] = base_frame
-                else:
-                    out_images[i] = base_frame
+
+                    # Eliminamos el PNG instantáneamente para ahorrar espacio en disco
+                    try:
+                        os.remove(sub_frame_path)
+                    except:
+                        pass
+
+                # Forzar limpieza de memoria profunda cada 30 frames para mantener la RAM plana
+                if i % 30 == 0:
+                    gc.collect()
             # =================================================
 
         finally:
@@ -411,4 +422,4 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 except: pass
 
         # Movemos de vuelta al dispositivo original solo al retornar
-        return (out_images.to(images.device), audio, temp_subs_path, transcription_txt)
+        return (images_cpu.to(original_device), audio, temp_subs_path, transcription_txt)
