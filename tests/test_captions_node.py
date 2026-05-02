@@ -1,5 +1,5 @@
 import sys
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 # Mock dependencies before importing the node
 sys.modules["torch"] = MagicMock()
@@ -11,7 +11,7 @@ sys.modules["numpy"] = MagicMock()
 sys.modules["tqdm"] = MagicMock()
 
 import unittest
-from captions_node import AutoCaptionsNode
+from captions_node import AutoCaptionsNode, get_available_fonts
 
 class WordInfo:
     def __init__(self, word, start, end):
@@ -120,6 +120,36 @@ class TestAutoCaptionsNode(unittest.TestCase):
     def test_format_time_ass_rollover_minutes(self):
         # 3599.996 -> 1:00:00.00
         self.assertEqual(self.node.format_time_ass(3599.996), "1:00:00.00")
+
+class TestGetAvailableFonts(unittest.TestCase):
+    @patch('os.makedirs')
+    @patch('glob.glob')
+    def test_get_available_fonts_fallback(self, mock_glob, mock_makedirs):
+        # Return an empty list for both TTF and OTF calls
+        mock_glob.return_value = []
+
+        result = get_available_fonts()
+
+        self.assertEqual(result, ["Arial"])
+        mock_makedirs.assert_called_once()
+        self.assertEqual(mock_glob.call_count, 2)
+
+    @patch('os.makedirs')
+    @patch('glob.glob')
+    def test_get_available_fonts_happy_path(self, mock_glob, mock_makedirs):
+        # Return specific lists for the two calls to glob.glob
+        # First call is for .ttf, second is for .otf
+        mock_glob.side_effect = [
+            ["/fake/path/fonts/Roboto.ttf", "/fake/path/fonts/Zilla.ttf"],
+            ["/fake/path/fonts/OpenSans.otf"]
+        ]
+
+        result = get_available_fonts()
+
+        # Should be alphabetical and extensions removed
+        self.assertEqual(result, ["OpenSans", "Roboto", "Zilla"])
+        mock_makedirs.assert_called_once()
+        self.assertEqual(mock_glob.call_count, 2)
 
 if __name__ == '__main__':
     unittest.main()
