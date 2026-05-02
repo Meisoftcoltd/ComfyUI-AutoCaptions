@@ -9,6 +9,7 @@ import cv2
 import re
 import gc
 import glob
+import concurrent.futures
 from tqdm import tqdm
 
 import folder_paths
@@ -385,10 +386,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
-            # Procesamos frame a frame sobrescribiendo la RAM existente
-            for i in tqdm(range(batch_size), desc="🖼️ Fusionando frames (In-Place)", unit="frame", dynamic_ncols=True):
+            # Función para procesar un frame individual concurrentemente
+            def process_frame(i):
                 sub_frame_path = os.path.join(temp_subs_frames_dir, f"sub_{i+1:05d}.png")
-
                 if os.path.exists(sub_frame_path):
                     sub_img_bgra = cv2.imread(sub_frame_path, cv2.IMREAD_UNCHANGED)
 
@@ -410,9 +410,20 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     except:
                         pass
 
-                # Forzar limpieza de memoria profunda cada 30 frames para mantener la RAM plana
-                if i % 30 == 0:
-                    gc.collect()
+            # Procesamos frames concurrentemente
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                futures = {executor.submit(process_frame, i): i for i in range(batch_size)}
+
+                with tqdm(total=batch_size, desc="🖼️ Fusionando frames (In-Place)", unit="frame", dynamic_ncols=True) as pbar:
+                    for count, future in enumerate(concurrent.futures.as_completed(futures), 1):
+                        # Levantar excepción si la hubo para fallar rápido
+                        future.result()
+
+                        pbar.update(1)
+
+                        # Forzar limpieza de memoria profunda cada 30 frames completados para mantener la RAM plana
+                        if count % 30 == 0:
+                            gc.collect()
             # =================================================
 
         finally:
