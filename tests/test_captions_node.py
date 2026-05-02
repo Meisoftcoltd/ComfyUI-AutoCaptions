@@ -121,5 +121,17 @@ class TestAutoCaptionsNode(unittest.TestCase):
         # 3599.996 -> 1:00:00.00
         self.assertEqual(self.node.format_time_ass(3599.996), "1:00:00.00")
 
+    def test_escape_ffmpeg_path_backslashes(self):
+        self.assertEqual(self.node.escape_ffmpeg_path("path\\to\\file"), "path/to/file")
+
+    def test_escape_ffmpeg_path_colons(self):
+        self.assertEqual(self.node.escape_ffmpeg_path("/path/to/font:name"), "/path/to/font\\:name")
+
+    def test_escape_ffmpeg_path_windows_absolute(self):
+        self.assertEqual(self.node.escape_ffmpeg_path("C:\\Windows\\Fonts\\Arial.ttf"), "C\\:/Windows/Fonts/Arial.ttf")
+
+    def test_escape_ffmpeg_path_no_changes(self):
+        self.assertEqual(self.node.escape_ffmpeg_path("/usr/share/fonts/Arial.ttf"), "/usr/share/fonts/Arial.ttf")
+
 if __name__ == '__main__':
     unittest.main()
