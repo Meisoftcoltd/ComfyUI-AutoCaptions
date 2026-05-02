@@ -171,7 +171,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             end_ass = self.format_time_ass(chunk["end"])
 
             if chunk.get("is_translated"):
-                line_text = f"{{\\c{prim_ass}\\fscx100\\fscy100}}{chunk['text']}"
+                safe_text = chunk["text"].replace("{", "[").replace("}", "]")
+                line_text = f"{{\\c{prim_ass}\\fscx100\\fscy100}}{safe_text}"
             else:
                 line_text = ""
                 for i, word in enumerate(chunk["words"]):
@@ -182,10 +183,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     t1, t2 = t_start_ms, t_start_ms + int(duration_ms * 0.15)
                     t3, t4 = t_start_ms + int(duration_ms * 0.85), t_end_ms
 
+                    safe_word = word["word"].replace("{", "[").replace("}", "]")
                     word_tag = f"{{\\t({t1},{t2},\\c{high_ass}\\fscx120\\fscy120)\\t({t3},{t4},\\c{prim_ass}\\fscx100\\fscy100)}}"
                     reset_tag = f"{{\\c{prim_ass}\\fscx100\\fscy100}}"
                     space = " " if i < len(chunk["words"]) - 1 else ""
-                    line_text += f"{word_tag}{word['word'].strip()}{reset_tag}{space}"
+                    line_text += f"{word_tag}{safe_word.strip()}{reset_tag}{space}"
 
             event = f"Dialogue: 0,{start_ass},{end_ass},Default,,0,0,0,,{line_text}"
             events.append(event)

@@ -121,5 +121,61 @@ class TestAutoCaptionsNode(unittest.TestCase):
         # 3599.996 -> 1:00:00.00
         self.assertEqual(self.node.format_time_ass(3599.996), "1:00:00.00")
 
+    def test_generate_ass_content_sanitizes_braces(self):
+        chunks = [
+            {
+                "start": 0.0,
+                "end": 1.0,
+                "text": "Hello {world}",
+                "words": [
+                    {"word": "Hello", "start": 0.0, "end": 0.5},
+                    {"word": "{world}", "start": 0.5, "end": 1.0}
+                ]
+            }
+        ]
+
+        # Test 1: Native Transcription (word-by-word)
+        ass_content = self.node.generate_ass_content(
+            chunks=chunks,
+            font_name="Arial",
+            font_size=50,
+            primary_color="#FFFFFF",
+            highlight_color="#FFFF00",
+            outline_color="#000000",
+            shadow_color="#000000",
+            alignment="Bottom-Center",
+            platform_safe_zone="None",
+            play_res_x=1080,
+            play_res_y=1920,
+            outline_thickness=2,
+            shadow_offset=2,
+            bold=True,
+            italic=False
+        )
+        self.assertNotIn("{world}", ass_content, "Unsanitized braces found in native transcription ASS content")
+        self.assertIn("[world]", ass_content, "Sanitized brackets missing in native transcription ASS content")
+
+        # Test 2: Translated (chunk-level)
+        chunks[0]["is_translated"] = True
+        ass_content_translated = self.node.generate_ass_content(
+            chunks=chunks,
+            font_name="Arial",
+            font_size=50,
+            primary_color="#FFFFFF",
+            highlight_color="#FFFF00",
+            outline_color="#000000",
+            shadow_color="#000000",
+            alignment="Bottom-Center",
+            platform_safe_zone="None",
+            play_res_x=1080,
+            play_res_y=1920,
+            outline_thickness=2,
+            shadow_offset=2,
+            bold=True,
+            italic=False
+        )
+        self.assertNotIn("{world}", ass_content_translated, "Unsanitized braces found in translated ASS content")
+        self.assertIn("[world]", ass_content_translated, "Sanitized brackets missing in translated ASS content")
+
 if __name__ == '__main__':
     unittest.main()
