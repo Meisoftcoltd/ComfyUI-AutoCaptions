@@ -346,7 +346,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
             print("Transcribing audio...")
             whisper_task = "translate" if translate_to == "English" else "transcribe"
-            segments, info = model.transcribe(
+            segments, _ = model.transcribe(
                 temp_audio_path,
                 word_timestamps=True,
                 task=whisper_task,
