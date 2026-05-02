@@ -121,5 +121,47 @@ class TestAutoCaptionsNode(unittest.TestCase):
         # 3599.996 -> 1:00:00.00
         self.assertEqual(self.node.format_time_ass(3599.996), "1:00:00.00")
 
+    def test_generate_captions_early_return_images_none(self):
+        result = self.node.generate_captions(
+            images=None, audio={"waveform": "mock", "sample_rate": 16000}, whisper_model="tiny",
+            fps=30.0, width=1080, height=1920, font_name="Arial", font_width_percent=80,
+            max_words_per_line=4, outline_thickness=3, shadow_offset=5, text_casing="Normal",
+            bold=False, italic=False, primary_color="Blanco Puro", highlight_color="Amarillo Neón",
+            outline_color="Negro Absoluto", shadow_color="Negro Absoluto", alignment="Bottom-Center",
+            platform_safe_zone="None", translate_to="Original"
+        )
+        self.assertEqual(result[0], None)
+        self.assertEqual(result[1], {"waveform": "mock", "sample_rate": 16000})
+        self.assertEqual(result[2], "")
+        self.assertEqual(result[3], "")
+
+    def test_generate_captions_early_return_audio_none(self):
+        result = self.node.generate_captions(
+            images="mock_images", audio=None, whisper_model="tiny",
+            fps=30.0, width=1080, height=1920, font_name="Arial", font_width_percent=80,
+            max_words_per_line=4, outline_thickness=3, shadow_offset=5, text_casing="Normal",
+            bold=False, italic=False, primary_color="Blanco Puro", highlight_color="Amarillo Neón",
+            outline_color="Negro Absoluto", shadow_color="Negro Absoluto", alignment="Bottom-Center",
+            platform_safe_zone="None", translate_to="Original"
+        )
+        self.assertEqual(result[0], "mock_images")
+        self.assertEqual(result[1], None)
+        self.assertEqual(result[2], "")
+        self.assertEqual(result[3], "")
+
+    def test_generate_captions_early_return_both_none(self):
+        result = self.node.generate_captions(
+            images=None, audio=None, whisper_model="tiny",
+            fps=30.0, width=1080, height=1920, font_name="Arial", font_width_percent=80,
+            max_words_per_line=4, outline_thickness=3, shadow_offset=5, text_casing="Normal",
+            bold=False, italic=False, primary_color="Blanco Puro", highlight_color="Amarillo Neón",
+            outline_color="Negro Absoluto", shadow_color="Negro Absoluto", alignment="Bottom-Center",
+            platform_safe_zone="None", translate_to="Original"
+        )
+        self.assertEqual(result[0], None)
+        self.assertEqual(result[1], None)
+        self.assertEqual(result[2], "")
+        self.assertEqual(result[3], "")
+
 if __name__ == '__main__':
     unittest.main()
