@@ -213,6 +213,21 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
         return chunks
 
+    def translate_chunks(self, chunks, translate_to):
+        if translate_to not in ["Original", "English"] and GoogleTranslator:
+            try:
+                lang_map = {"Spanish": "es", "French": "fr", "German": "de", "Italian": "it", "Portuguese": "pt", "Japanese": "ja", "Chinese": "zh-CN"}
+                target_lang = lang_map.get(translate_to, "en")
+                print(f"Translating to {translate_to} ({target_lang})...")
+                translator = GoogleTranslator(source='auto', target=target_lang)
+
+                for chunk in chunks:
+                    chunk["text"] = translator.translate(chunk["text"])
+                    chunk["is_translated"] = True
+            except Exception as e:
+                print(f"Warning: Failed to translate: {e}")
+        return chunks
+
     def generate_captions(self, images, audio, whisper_model, fps, width, height, font_name, font_width_percent, max_words_per_line, outline_thickness, shadow_offset, text_casing, bold, italic, primary_color, highlight_color, outline_color, shadow_color, alignment, platform_safe_zone, translate_to):
 
         real_primary = COLOR_MAP.get(primary_color, "#FFFFFF")
@@ -282,18 +297,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
             chunks = self.group_words_into_chunks(all_words, max_words=max_words_per_line)
 
-            if translate_to not in ["Original", "English"] and GoogleTranslator:
-                try:
-                    lang_map = {"Spanish": "es", "French": "fr", "German": "de", "Italian": "it", "Portuguese": "pt", "Japanese": "ja", "Chinese": "zh-CN"}
-                    target_lang = lang_map.get(translate_to, "en")
-                    print(f"Translating to {translate_to} ({target_lang})...")
-                    translator = GoogleTranslator(source='auto', target=target_lang)
-
-                    for chunk in chunks:
-                        chunk["text"] = translator.translate(chunk["text"])
-                        chunk["is_translated"] = True
-                except Exception as e:
-                    print(f"Warning: Failed to translate: {e}")
+            chunks = self.translate_chunks(chunks, translate_to)
 
             # ====== INICIO NUEVA LÓGICA DE TEXT CASING ======
             for chunk in chunks:

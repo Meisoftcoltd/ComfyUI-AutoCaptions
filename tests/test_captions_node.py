@@ -11,6 +11,7 @@ sys.modules["numpy"] = MagicMock()
 sys.modules["tqdm"] = MagicMock()
 
 import unittest
+from unittest.mock import patch
 from captions_node import AutoCaptionsNode
 
 class WordInfo:
@@ -120,6 +121,46 @@ class TestAutoCaptionsNode(unittest.TestCase):
     def test_format_time_ass_rollover_minutes(self):
         # 3599.996 -> 1:00:00.00
         self.assertEqual(self.node.format_time_ass(3599.996), "1:00:00.00")
+
+    def test_translate_chunks_no_translation(self):
+        chunks = [{"text": "Hello world"}]
+        result = self.node.translate_chunks(chunks, "Original")
+        self.assertEqual(result[0]["text"], "Hello world")
+        self.assertNotIn("is_translated", result[0])
+
+        result2 = self.node.translate_chunks(chunks, "English")
+        self.assertEqual(result2[0]["text"], "Hello world")
+        self.assertNotIn("is_translated", result2[0])
+
+    @patch('captions_node.GoogleTranslator')
+    def test_translate_chunks_success(self, MockTranslator):
+        mock_translator_instance = MagicMock()
+        mock_translator_instance.translate.return_value = "Hola mundo"
+        MockTranslator.return_value = mock_translator_instance
+
+        chunks = [{"text": "Hello world"}]
+        result = self.node.translate_chunks(chunks, "Spanish")
+
+        self.assertEqual(result[0]["text"], "Hola mundo")
+        self.assertTrue(result[0]["is_translated"])
+        MockTranslator.assert_called_once_with(source='auto', target='es')
+        mock_translator_instance.translate.assert_called_once_with("Hello world")
+
+    @patch('captions_node.GoogleTranslator')
+    def test_translate_chunks_fallback(self, MockTranslator):
+        mock_translator_instance = MagicMock()
+        mock_translator_instance.translate.side_effect = Exception("API Error")
+        MockTranslator.return_value = mock_translator_instance
+
+        chunks = [{"text": "Hello world"}]
+        # This should NOT raise an exception, it should be caught and logged
+        result = self.node.translate_chunks(chunks, "Spanish")
+
+        # Verify chunks remain unchanged
+        self.assertEqual(result[0]["text"], "Hello world")
+        self.assertNotIn("is_translated", result[0])
+        MockTranslator.assert_called_once_with(source='auto', target='es')
+        mock_translator_instance.translate.assert_called_once_with("Hello world")
 
 if __name__ == '__main__':
     unittest.main()
