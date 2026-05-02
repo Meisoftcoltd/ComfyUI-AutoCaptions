@@ -1,1 +1,4 @@
 __pycache__/
+
+.gitignore
+temp_benchmark_cv2_frames/
