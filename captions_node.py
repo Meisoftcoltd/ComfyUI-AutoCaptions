@@ -105,6 +105,7 @@ class AutoCaptionsNode:
     def escape_ffmpeg_path(self, path):
         path = path.replace("\\", "/")
         path = path.replace(":", "\\:")
+        path = path.replace("'", "\\'")
         return path
 
     def format_time_ass(self, seconds):

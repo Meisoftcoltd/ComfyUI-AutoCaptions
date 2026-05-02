@@ -101,5 +101,17 @@ class TestAutoCaptionsNode(unittest.TestCase):
         self.assertEqual(len(chunks), 1)
         self.assertEqual(chunks[0]["text"], "Hello world")
 
+    def test_escape_ffmpeg_path_security(self):
+        # Verify single quote escaping to prevent filter injection
+        path = "file'with'quote.ass"
+        escaped = self.node.escape_ffmpeg_path(path)
+        self.assertEqual(escaped, "file\\'with\\'quote.ass")
+
+    def test_escape_ffmpeg_path_windows(self):
+        # Verify Windows path handling
+        path = "C:\\path\\to\\file.ass"
+        escaped = self.node.escape_ffmpeg_path(path)
+        self.assertEqual(escaped, "C\\:/path/to/file.ass")
+
 if __name__ == '__main__':
     unittest.main()
