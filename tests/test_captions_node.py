@@ -101,5 +101,25 @@ class TestAutoCaptionsNode(unittest.TestCase):
         self.assertEqual(len(chunks), 1)
         self.assertEqual(chunks[0]["text"], "Hello world")
 
+    def test_format_time_ass_basic(self):
+        self.assertEqual(self.node.format_time_ass(0.0), "0:00:00.00")
+        self.assertEqual(self.node.format_time_ass(1.23), "0:00:01.23")
+        self.assertEqual(self.node.format_time_ass(61.5), "0:01:01.50")
+        self.assertEqual(self.node.format_time_ass(3661.0), "1:01:01.00")
+
+    def test_format_time_ass_rounding(self):
+        # 1.234 -> 1.23
+        self.assertEqual(self.node.format_time_ass(1.234), "0:00:01.23")
+        # 1.236 -> 1.24
+        self.assertEqual(self.node.format_time_ass(1.236), "0:00:01.24")
+
+    def test_format_time_ass_rollover_seconds(self):
+        # 59.996 -> 1:00.00
+        self.assertEqual(self.node.format_time_ass(59.996), "0:01:00.00")
+
+    def test_format_time_ass_rollover_minutes(self):
+        # 3599.996 -> 1:00:00.00
+        self.assertEqual(self.node.format_time_ass(3599.996), "1:00:00.00")
+
 if __name__ == '__main__':
     unittest.main()

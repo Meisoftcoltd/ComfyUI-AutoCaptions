@@ -108,13 +108,13 @@ class AutoCaptionsNode:
         return path
 
     def format_time_ass(self, seconds):
-        hours = int(seconds // 3600)
-        minutes = int((seconds % 3600) // 60)
-        secs = int(seconds % 60)
-        centiseconds = int(round((seconds - int(seconds)) * 100))
-        if centiseconds == 100:
-            secs += 1
-            centiseconds = 0
+        total_centiseconds = int(round(seconds * 100))
+        centiseconds = total_centiseconds % 100
+        total_seconds = total_centiseconds // 100
+        secs = total_seconds % 60
+        total_minutes = total_seconds // 60
+        minutes = total_minutes % 60
+        hours = total_minutes // 60
         return f"{hours}:{minutes:02d}:{secs:02d}.{centiseconds:02d}"
 
     def generate_ass_content(self, chunks, font_name, font_size, primary_color, highlight_color, outline_color, shadow_color, alignment, platform_safe_zone, play_res_x, play_res_y, outline_thickness, shadow_offset, bold, italic):
