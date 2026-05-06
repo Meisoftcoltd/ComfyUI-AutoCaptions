@@ -238,13 +238,22 @@ app.registerExtension({
 
                 // 1. Evitar que una sola palabra gigante rompa la caja
                 let maxWordWidth = 0;
+                let lastFont = null;
+
                 words.forEach(w => {
-                    ctx.font = getFontString(Math.round(finalBaseFontSize * w.scale));
-                    maxWordWidth = Math.max(maxWordWidth, ctx.measureText(w.text.trim()).width);
+                    const fStr = getFontString(Math.round(finalBaseFontSize * w.scale));
+                    if (fStr !== lastFont) {
+                        ctx.font = fStr;
+                        lastFont = fStr;
+                    }
+                    w.widthTrim = ctx.measureText(w.text.trim()).width;
+                    maxWordWidth = Math.max(maxWordWidth, w.widthTrim);
                 });
 
                 if (maxWordWidth > paddedWBox) {
                     finalBaseFontSize = finalBaseFontSize * (paddedWBox / maxWordWidth);
+                    // Reset widths as font changed
+                    lastFont = null;
                 }
 
                 // 2. Agrupar palabras en líneas inteligentemente
@@ -253,16 +262,20 @@ app.registerExtension({
                 let currentLineWidth = 0;
 
                 words.forEach(w => {
-                    ctx.font = getFontString(Math.round(finalBaseFontSize * w.scale));
-                    const wWidth = ctx.measureText(w.text).width;
+                    const fStr = getFontString(Math.round(finalBaseFontSize * w.scale));
+                    if (fStr !== lastFont) {
+                        ctx.font = fStr;
+                        lastFont = fStr;
+                    }
+                    w.width = ctx.measureText(w.text).width;
 
-                    if (currentLine.length > 0 && currentLineWidth + wWidth > paddedWBox) {
+                    if (currentLine.length > 0 && currentLineWidth + w.width > paddedWBox) {
                         lines.push({ words: currentLine, width: currentLineWidth });
                         currentLine = [w];
-                        currentLineWidth = wWidth;
+                        currentLineWidth = w.width;
                     } else {
                         currentLine.push(w);
-                        currentLineWidth += wWidth;
+                        currentLineWidth += w.width;
                     }
                 });
                 if (currentLine.length > 0) {
@@ -298,6 +311,16 @@ app.registerExtension({
                 ctx.textBaseline = "top";
                 ctx.lineJoin = "round";
 
+                // Configuración invariante fuera del bucle
+                ctx.shadowColor = shadowColor;
+                ctx.shadowBlur = 0;
+                if (scaledOutlineThickness > 0) {
+                    ctx.lineWidth = scaledOutlineThickness * 2;
+                    ctx.strokeStyle = outlineColor;
+                }
+
+                lastFont = null;
+
                 // --- 4. DIBUJAR CADA LÍNEA ---
                 lines.forEach((line, lineIndex) => {
                     const textY = startY + (lineIndex * lineHeight);
@@ -313,30 +336,28 @@ app.registerExtension({
                     let currentX = startX;
 
                     line.words.forEach(w => {
-                        const fontSize = Math.round(finalBaseFontSize * w.scale);
-                        ctx.font = getFontString(fontSize);
+                        const fStr = getFontString(Math.round(finalBaseFontSize * w.scale));
+                        if (fStr !== lastFont) {
+                            ctx.font = fStr;
+                            lastFont = fStr;
+                        }
 
-                        // Sombra dura
-                        ctx.shadowColor = shadowColor;
-                        ctx.shadowBlur = 0;
+                        // Sombra dura para el borde
                         ctx.shadowOffsetX = scaledShadowOffset;
                         ctx.shadowOffsetY = scaledShadowOffset;
 
                         // Borde
                         if (scaledOutlineThickness > 0) {
-                            ctx.lineWidth = scaledOutlineThickness * 2;
-                            ctx.strokeStyle = outlineColor;
                             ctx.strokeText(w.text, currentX, textY);
                         }
 
-                        // Relleno
-                        ctx.shadowBlur = 0;
+                        // Relleno (quitamos sombra para que no se duplique sobre el stroke)
                         ctx.shadowOffsetX = 0;
                         ctx.shadowOffsetY = 0;
                         ctx.fillStyle = w.color;
                         ctx.fillText(w.text, currentX, textY);
 
-                        currentX += ctx.measureText(w.text).width;
+                        currentX += w.width;
                     });
                 });
 
