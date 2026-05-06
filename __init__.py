@@ -74,7 +74,7 @@ def optimize_font_names(fonts_dir):
             try:
                 if os.path.exists(filepath):
                     os.remove(filepath)
-            except:
+            except OSError:
                 pass
 
 # --- INICIALIZACIÓN DEL SERVIDOR ---

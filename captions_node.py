@@ -407,7 +407,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     # Eliminamos el PNG instantáneamente para ahorrar espacio en disco
                     try:
                         os.remove(sub_frame_path)
-                    except:
+                    except OSError:
                         pass
 
             # Procesamos frames concurrentemente
@@ -428,11 +428,15 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
         finally:
             if os.path.exists(temp_audio_path):
-                try: os.remove(temp_audio_path)
-                except: pass
+                try:
+                    os.remove(temp_audio_path)
+                except OSError:
+                    pass
             if os.path.exists(temp_subs_frames_dir):
-                try: shutil.rmtree(temp_subs_frames_dir)
-                except: pass
+                try:
+                    shutil.rmtree(temp_subs_frames_dir)
+                except OSError:
+                    pass
 
         # Movemos de vuelta al dispositivo original solo al retornar
         return (images_cpu.to(original_device), audio, temp_subs_path, transcription_txt)
