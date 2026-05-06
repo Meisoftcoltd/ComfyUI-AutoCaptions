@@ -162,5 +162,17 @@ class TestAutoCaptionsNode(unittest.TestCase):
         MockTranslator.assert_called_once_with(source='auto', target='es')
         mock_translator_instance.translate.assert_called_once_with("Hello world")
 
+    def test_escape_ffmpeg_path(self):
+        # Linux path
+        self.assertEqual(self.node.escape_ffmpeg_path("/path/to/file.ass"), "/path/to/file.ass")
+        # Windows path
+        self.assertEqual(self.node.escape_ffmpeg_path("C:\\path\\to\\file.ass"), "C\\:/path/to/file.ass")
+        # Multiple colons
+        self.assertEqual(self.node.escape_ffmpeg_path("C:\\path:to:file.ass"), "C\\:/path\\:to\\:file.ass")
+        # Path with only backslashes
+        self.assertEqual(self.node.escape_ffmpeg_path("path\\to\\file"), "path/to/file")
+        # Empty string
+        self.assertEqual(self.node.escape_ffmpeg_path(""), "")
+
 if __name__ == '__main__':
     unittest.main()
