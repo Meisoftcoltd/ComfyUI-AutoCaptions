@@ -420,10 +420,6 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                         future.result()
 
                         pbar.update(1)
-
-                        # Forzar limpieza de memoria profunda cada 30 frames completados para mantener la RAM plana
-                        if count % 30 == 0:
-                            gc.collect()
             # =================================================
 
         finally:
