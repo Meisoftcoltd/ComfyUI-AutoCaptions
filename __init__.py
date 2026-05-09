@@ -1,4 +1,5 @@
 import os
+import contextlib
 import glob
 import re
 import server
@@ -71,11 +72,9 @@ def optimize_font_names(fonts_dir):
         except Exception as e:
             # Si falla al abrirse (Corrupto), se elimina sin preguntar
             print(f"   -> 🧨 ARCHIVO CORRUPTO DETECTADO: Eliminando '{filename}'... (Error: {e})")
-            try:
-                if os.path.exists(filepath):
+            if os.path.exists(filepath):
+                with contextlib.suppress(OSError):
                     os.remove(filepath)
-            except OSError:
-                pass
 
 # --- INICIALIZACIÓN DEL SERVIDOR ---
 fonts_dir = os.path.join(os.path.dirname(__file__), "fonts")
