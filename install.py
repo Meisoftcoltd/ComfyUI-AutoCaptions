@@ -2,7 +2,6 @@ import sys
 import subprocess
 import os
 import shutil
-import urllib.request
 
 def install_requirements():
     req_file = os.path.join(os.path.dirname(__file__), "requirements.txt")
@@ -45,12 +44,16 @@ def download_default_fonts():
     }
 
     print("🔠 [Meisoft Auto Captions] Comprobando fuentes por defecto...")
+    import requests
     for filename, url in default_fonts.items():
         filepath = os.path.join(fonts_dir, filename)
         if not os.path.exists(filepath):
             try:
                 print(f"   -> Descargando {filename}...")
-                urllib.request.urlretrieve(url, filepath)
+                response = requests.get(url, timeout=30)
+                response.raise_for_status()
+                with open(filepath, "wb") as f:
+                    f.write(response.content)
             except Exception as e:
                 print(f"   -> ❌ Error descargando {filename}: {e}")
     print("✅ Fuentes listas. Los usuarios pueden añadir sus propios archivos .ttf/.otf a la carpeta 'fonts/'.")
