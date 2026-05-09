@@ -1,4 +1,5 @@
 import os
+import contextlib
 import subprocess
 import uuid
 import shutil
@@ -405,10 +406,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                         del sub_tensor, text_rgb, alpha, sub_img_bgra, sub_img_rgba
 
                     # Eliminamos el PNG instantáneamente para ahorrar espacio en disco
-                    try:
+                    with contextlib.suppress(OSError):
                         os.remove(sub_frame_path)
-                    except OSError:
-                        pass
 
             # Procesamos frames concurrentemente
             with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -424,15 +423,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
         finally:
             if os.path.exists(temp_audio_path):
-                try:
+                with contextlib.suppress(OSError):
                     os.remove(temp_audio_path)
-                except OSError:
-                    pass
             if os.path.exists(temp_subs_frames_dir):
-                try:
+                with contextlib.suppress(OSError):
                     shutil.rmtree(temp_subs_frames_dir)
-                except OSError:
-                    pass
 
         # Movemos de vuelta al dispositivo original solo al retornar
         return (images_cpu.to(original_device), audio, temp_subs_path, transcription_txt)
