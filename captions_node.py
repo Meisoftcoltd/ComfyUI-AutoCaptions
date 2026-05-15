@@ -388,6 +388,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 torch.cuda.empty_cache()
 
             # Función para procesar un frame individual concurrentemente
+            @torch.inference_mode()
             def process_frame(i):
                 sub_frame_path = os.path.join(temp_subs_frames_dir, f"sub_{i+1:05d}.png")
                 if os.path.exists(sub_frame_path):
