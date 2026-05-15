@@ -379,7 +379,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
             # Guardamos el dispositivo original para devolverlo correctamente luego
             original_device = images.device
-            images_cpu = images.cpu()
+            images_cpu = images.cpu().clone()
 
             # Destruimos la referencia del tensor original para no tener duplicados
             del images
