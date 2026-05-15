@@ -379,7 +379,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
             # Guardamos el dispositivo original para devolverlo correctamente luego
             original_device = images.device
-            images_cpu = images.cpu().clone()
+            # Tensor Washing via Numpy: This converts the tensor to numpy (losing the inference mode)
+            # and then converts it back to a clean, mutable tensor to avoid InferenceMode inherited flags.
+            images_cpu = torch.from_numpy(images.cpu().numpy()).clone()
 
             # Destruimos la referencia del tensor original para no tener duplicados
             del images
@@ -401,8 +403,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                         alpha = sub_tensor[:, :, 3:4]
                         text_rgb = sub_tensor[:, :, :3]
 
-                        # Fusión IN-PLACE: Operadores nativos mul_ y add_ (0 bytes extra de RAM)
-                        images_cpu[i].mul_(1.0 - alpha).add_(text_rgb * alpha)
+                        # Fusión: Evitar operaciones in-place (_ ) en entorno multihilo
+                        images_cpu[i] = (images_cpu[i] * (1.0 - alpha)) + (text_rgb * alpha)
 
                         del sub_tensor, text_rgb, alpha, sub_img_bgra, sub_img_rgba
 
